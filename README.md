@@ -6,19 +6,20 @@ No engine, no frameworks: one HTML file of vanilla canvas JavaScript inside a fr
 
 ![The full parcel map](docs/screenshot-map.png)
 
-| Managing the farm | The market |
-| :---: | :---: |
-| ![Home farm, fields, roads and a pasture](docs/screenshot-farm.png) | ![Fluctuating market and silo](docs/screenshot-market.png) |
+| Managing the farm | The market | Statistics |
+| :---: | :---: | :---: |
+| ![Home farm, fields, roads and a pasture](docs/screenshot-farm.png) | ![Fluctuating market and silo](docs/screenshot-market.png) | ![Statistics panel](docs/screenshot-stats.png) |
 
 ## Features
 
-- 🗺️ **Big procedural world** — a ~6× map of naturally-shaped field parcels packed between dirt roads, a highway, lakes, and forest valleys. Deterministic layout, so it's the same world every time.
-- 🧭 **Buy land & farms** — unowned parcels are a cool blue-gray; click to buy (bigger + farther = pricier). Own several of the five **farm locations** and base your machines where the work is.
-- 🚜 **Autonomous crews** — you never drive. Workers board tractors (planting) and harvesters (reaping) and work fields cell by cell. Bigger fields take longer, or more machines.
+- 🗺️ **Big procedural world** — a ~6× map of naturally-shaped field parcels packed between winding dirt roads, a highway, lakes, and forest valleys. Deterministic layout, so it's the same world every time.
+- 🧭 **Buy land & farms** — unowned parcels are a cool blue-gray; click to buy (bigger + farther = pricier). Own several of the **seven farm locations** and base your machines where the work is.
+- 🚜 **Autonomous crews** — you never drive. Workers board tractors (planting) and harvesters (reaping) and work fields cell by cell, prioritizing land near their home farm. Bigger fields take longer, or more machines.
 - 👷 **Workers ≠ machines** — every vehicle needs a free worker. Balancing your labor pool against your fleet is the core decision.
 - 🛣️ **Road logistics** — vehicles path-find along the road network (and drive faster on it), routing around lakes. Where you station your machines genuinely matters.
-- 🏬 **Silo & market** — harvests fill a silo instead of paying instantly. Each crop's price drifts on its own cycle, so you decide *when to sell*. Upgrade silo capacity, or flip on auto-sell to stay hands-off.
+- 🏬 **Silo & market** — harvests fill a silo instead of paying instantly. Each crop's price drifts on its own cycle, so you decide *when to sell*. Upgrade silo capacity, or flip on auto-sell to stay hands-off. When the silo fills, harvesting pauses — and crops left standing too long spoil.
 - 🐄 **Pastures & animals** — some parcels come with wandering cows, sheep, or chickens. Buy the pasture and they earn passively (milk, wool, eggs), even while the app is closed (capped at 4 h).
+- 📈 **Statistics** — track total earned, spent, net profit, crops harvested / sold / planted / spoiled, and holdings.
 - 💾 **Runs unattended** — real-time (and offline) growth, auto-save, and always-on-top so it keeps working while you don't.
 
 ## Installation

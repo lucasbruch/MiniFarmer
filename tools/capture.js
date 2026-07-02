@@ -46,5 +46,10 @@ app.whenReady().then(async () => {
   await sleep(600);
   await shot('screenshot-market.png');
 
+  // 4) statistics panel
+  await js(`document.querySelector('#market .mkt-close').click(); document.getElementById('statsChip').click()`);
+  await sleep(600);
+  await shot('screenshot-stats.png');
+
   app.quit();
 });
