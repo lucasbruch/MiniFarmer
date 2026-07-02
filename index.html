@@ -15,10 +15,12 @@
   .tbtn:hover { background: rgba(255,255,255,.34); }
   .tbtn.active { background: var(--gold); color: #5a3f12; }
   #close:hover { background: #e5645c; }
-  #hud { display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: var(--bar); color: #fff; font-size: 11.5px; font-weight: 700; }
+  #hud { display: flex; flex-direction: column; gap: 5px; padding: 6px 10px; background: var(--bar); color: #fff; font-size: 11.5px; font-weight: 700; }
+  .hud-row { display: flex; align-items: center; gap: 7px; }
+  .hud-spacer { flex: 1; min-width: 0; }
   .chip { background: var(--panel); color: var(--ink); border-radius: 999px; padding: 3px 9px; font-weight: 800; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 0 rgba(0,0,0,.1); white-space: nowrap; }
   .chip svg { display: block; }
-  #hint { flex: 1; min-width: 0; text-align: right; padding: 0 4px; text-shadow: 0 1px 1px rgba(0,0,0,.2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #hint { flex: 1; min-width: 0; text-align: left; text-shadow: 0 1px 1px rgba(0,0,0,.2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip.coins { min-width: 82px; justify-content: flex-end; font-size: 13px; }
   #stage { flex: 1 1 auto; min-height: 0; position: relative; }
   canvas { width: 100%; height: 100%; display: block; cursor: grab; }
@@ -60,13 +62,16 @@
   </div>
 
   <div id="hud">
-    <div class="chip">👷 <span id="workers">0</span></div>
-    <div class="chip">🚜 <span id="tractors">0</span></div>
-    <div class="chip"><span id="hvIcon"></span> <span id="harvesters">0</span></div>
-    <div class="chip">🐄 <span id="animals">0</span></div>
-    <div class="chip silo" id="siloChip" title="Open market">🛖 <span id="silo">0/200</span></div>
-    <div id="hint">Drag to pan · wheel to zoom</div>
-    <div class="chip coins">🪙 <span id="coins">0</span></div>
+    <div class="hud-row">
+      <div class="chip">👷 <span id="workers">0</span></div>
+      <div class="chip">🚜 <span id="tractors">0</span></div>
+      <div class="chip"><span id="hvIcon"></span> <span id="harvesters">0</span></div>
+      <div class="chip">🐄 <span id="animals">0</span></div>
+      <div class="chip silo" id="siloChip" title="Open market">🛖 <span id="silo">0/200</span></div>
+      <div class="hud-spacer"></div>
+      <div class="chip coins">🪙 <span id="coins">0</span></div>
+    </div>
+    <div class="hud-row"><div id="hint">Drag to pan · wheel to zoom · click a field to buy</div></div>
   </div>
 
   <div id="stage"><canvas id="c"></canvas></div>
@@ -587,7 +592,7 @@
   }
 
   // ---------- Input ----------
-  let down = false, moved = false, sx = 0, sy = 0, cx0 = 0, cy0 = 0, hoverField = -1, hoverFarm = -1;
+  let down = false, moved = false, sx = 0, sy = 0, cx0 = 0, cy0 = 0, hoverField = -1, hoverFarm = -1, mouseX = 0, mouseY = 0, mouseIn = false;
   const keys = {};
   window.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault(); keys[k] = true; });
   window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -596,10 +601,11 @@
   window.addEventListener('mouseup', e => { if (down && !moved) handleClick(e); down = false; });
   canvas.addEventListener('mousemove', e => {
     const b = canvas.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top;
+    mouseX = mx; mouseY = my; mouseIn = true;
     if (down) { const ddx = e.clientX - sx, ddy = e.clientY - sy; if (Math.abs(ddx) + Math.abs(ddy) > 4) moved = true; cam.x = cx0 - ddx / zoom; cam.y = cy0 - ddy / zoom; clampCam(); }
     const w = toWorld(mx, my); hoverFarm = farmAt(w.x, w.y); hoverField = hoverFarm >= 0 ? -1 : fieldAt(w.x, w.y);
   });
-  canvas.addEventListener('mouseleave', () => { hoverField = -1; hoverFarm = -1; });
+  canvas.addEventListener('mouseleave', () => { hoverField = -1; hoverFarm = -1; mouseIn = false; });
   canvas.addEventListener('wheel', e => { e.preventDefault(); const b = canvas.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, w = toWorld(mx, my); zoom = Math.min(MAXZ, Math.max(MINZ, zoom * (e.deltaY > 0 ? 0.86 : 1.16))); cam.x = w.x - mx / zoom; cam.y = w.y - my / zoom; clampCam(); }, { passive: false });
   function fieldAt(wx, wy) { const c = cellMap.get(Math.floor(wx / CELL) + ',' + Math.floor(wy / CELL)); return c ? c.fi : -1; }
   function farmAt(wx, wy) { for (let i = 0; i < FARMS.length; i++) { const f = FARMS[i], x = f.cx * CELL, y = f.cy * CELL; if (wx >= x - 12 && wx <= x + 58 && wy >= y - 22 && wy <= y + 34) return i; } return -1; }
@@ -628,6 +634,14 @@
     if (!f.owned) return `Field ${f.name} · ${f.cells.length} cells · 🪙${f.price} — click to buy`;
     let rip = 0; for (const c of f.cells) if (ripe(c)) rip++;
     return `Field ${f.name} · ${f.cells.length} cells · plan ${CROPS[f.plannedCrop].emoji} · ${rip} ripe`;
+  }
+  function tooltipText() {
+    if (hoverFarm >= 0) { const f = FARMS[hoverFarm]; return state.farmsOwned[hoverFarm] ? f.name + (state.activeFarm === hoverFarm ? ' · active' : '') : `${f.name} · 🪙${f.price}`; }
+    if (hoverField < 0) return null;
+    const f = fields[hoverField];
+    if (f.type === 'pasture') { const d = ANIMALS[f.animal]; return f.owned ? `Pasture ${f.name} · +🪙${f.herd * d.value}/${d.every}s` : `Pasture ${f.name} · ${f.herd}${d.emoji} · 🪙${f.price}`; }
+    if (!f.owned) return `Field ${f.name} · ${f.cells.length} cells · 🪙${f.price}`;
+    return `Field ${f.name} · plant ${CROPS[f.plannedCrop].emoji}`;
   }
 
   // ---------- Drawing helpers ----------
@@ -720,6 +734,22 @@
     for (const v of vehicles) if (v.x > vx0 - 30 && v.y > vy0 - 30 && v.x < vx1 + 30 && v.y < vy1 + 30) drawVehicle(v);
 
     for (let k = pops.length - 1; k >= 0; k--) { const p = pops[k]; p.life -= dt * 0.9; p.y -= dt * 20; if (p.life <= 0) { pops.splice(k, 1); continue; } ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = '#12481a'; ctx.font = `bold ${13 / Math.max(zoom, 0.55)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y); ctx.globalAlpha = 1; }
+
+    // cursor tooltip (screen space)
+    if (mouseIn && !down) {
+      const tt = tooltipText();
+      if (tt) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.font = 'bold 12px "Segoe UI"';
+        const tw = ctx.measureText(tt).width + 16, th = 23;
+        let tx = mouseX + 15, ty = mouseY + 16;
+        if (tx + tw > W) tx = mouseX - 15 - tw;
+        if (ty + th > H) ty = mouseY - 10 - th;
+        if (tx < 2) tx = 2;
+        rr(ctx, tx, ty, tw, th, 7); ctx.fillStyle = 'rgba(24,32,22,.92)'; ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(tt, tx + 8, ty + th / 2 + 0.5);
+      }
+    }
 
     requestAnimationFrame(frame);
   }
