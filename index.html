@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mini Farmer</title>
+<style>
+  :root { --grass: #79bd55; --panel: #fbf7ec; --ink: #4a3b2a; --gold: #f4b53f; --bar: #6cb14a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--grass); display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; }
+  #titlebar { -webkit-app-region: drag; height: 34px; display: flex; align-items: center; padding: 0 8px 0 12px; background: rgba(0,0,0,0.12); gap: 8px; }
+  #title { font-weight: 700; font-size: 13px; color: #fff; flex: 1; text-shadow: 0 1px 1px rgba(0,0,0,.25); }
+  .tbtn { -webkit-app-region: no-drag; width: 22px; height: 22px; border-radius: 6px; border: none; background: rgba(255,255,255,.18); color: #fff; cursor: pointer; font-size: 13px; line-height: 1; display: grid; place-items: center; transition: background .12s; }
+  .tbtn:hover { background: rgba(255,255,255,.34); }
+  .tbtn.active { background: var(--gold); color: #5a3f12; }
+  #close:hover { background: #e5645c; }
+  #hud { display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: var(--bar); color: #fff; font-size: 11.5px; font-weight: 700; }
+  .chip { background: var(--panel); color: var(--ink); border-radius: 999px; padding: 3px 9px; font-weight: 800; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 0 rgba(0,0,0,.1); white-space: nowrap; }
+  #hint { margin-left: auto; text-shadow: 0 1px 1px rgba(0,0,0,.2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stage { flex: 1 1 auto; min-height: 0; position: relative; }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #dock { background: var(--bar); padding: 7px 12px 10px; display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .row { display: flex; gap: 7px; }
+  .btn { -webkit-app-region: no-drag; flex: 1; background: var(--panel); border: 2px solid transparent; border-radius: 11px; padding: 5px 4px; cursor: pointer; text-align: center; box-shadow: 0 2px 0 rgba(0,0,0,.1); transition: transform .07s, border-color .12s; line-height: 1.12; }
+  .btn:hover { transform: translateY(-2px); }
+  .btn.sel { border-color: var(--gold); }
+  .btn .em { font-size: 17px; }
+  .btn .nm { font-size: 10px; font-weight: 800; margin-top: 1px; }
+  .btn .sub { font-size: 9.5px; color: #8a7256; }
+</style>
+</head>
+<body>
+  <div id="titlebar">
+    <div id="title">🧑‍🌾 Mini Farmer</div>
+    <button class="tbtn active" id="pin" title="Always on top">📌</button>
+    <button class="tbtn" id="min" title="Minimize">—</button>
+    <button class="tbtn" id="close" title="Close">✕</button>
+  </div>
+
+  <div id="hud">
+    <div class="chip">🪙 <span id="coins">0</span></div>
+    <div class="chip">👷 <span id="workers">0</span></div>
+    <div class="chip">🚜 <span id="tractors">0</span></div>
+    <div class="chip">🌾 <span id="harvesters">0</span></div>
+    <div class="chip">🐄 <span id="animals">0</span></div>
+    <div id="hint">Drag to pan · wheel to zoom</div>
+  </div>
+
+  <div id="stage"><canvas id="c"></canvas></div>
+
+  <div id="dock">
+    <div class="row" id="seeds"></div>
+    <div class="row" id="hire"></div>
+  </div>
+
+<script>
+(() => {
+  const wc = window.winControls;
+  let pinned = true;
+  document.getElementById('pin').onclick = (e) => { pinned = !pinned; e.currentTarget.classList.toggle('active', pinned); wc && wc.setPin(pinned); };
+  document.getElementById('min').onclick = () => wc && wc.minimize();
+  document.getElementById('close').onclick = () => { save(); wc && wc.close(); };
+
+  // ---------- Config ----------
+  const CELL = 18;
+  const GRID_W = 96, GRID_H = 68;
+  const WORLD = { w: GRID_W * CELL, h: GRID_H * CELL };
+  const WORK = 0.28, VSPEED = 105;
+  const CROPS = {
+    wheat:   { name: 'Wheat',   emoji: '🌾', cost: 1, sell: 3,  grow: 45,  color: '#e3c565' },
+    carrot:  { name: 'Carrot',  emoji: '🥕', cost: 2, sell: 6,  grow: 120, color: '#e8863f' },
+    pumpkin: { name: 'Pumpkin', emoji: '🎃', cost: 5, sell: 16, grow: 300, color: '#d9772e' },
+  };
+  const SEEDS = ['wheat', 'carrot', 'pumpkin'];
+  const ANIMALS = {
+    cow:     { emoji: '🐄', value: 3, every: 15, product: 'milk' },
+    sheep:   { emoji: '🐑', value: 2, every: 10, product: 'wool' },
+    chicken: { emoji: '🐔', value: 1, every: 5,  product: 'eggs' },
+  };
+  const workerPrice    = (n) => Math.round(30 * Math.pow(1.55, n));
+  const tractorPrice   = (n) => Math.round(55 * Math.pow(1.7, n));
+  const harvesterPrice = (n) => Math.round(85 * Math.pow(1.7, n));
+
+  const FARMS = [
+    { cx: 5,  cy: 34, price: 0,   name: 'Home Farm' },
+    { cx: 48, cy: 9,  price: 350, name: 'North Farm' },
+    { cx: 84, cy: 22, price: 550, name: 'East Farm' },
+    { cx: 32, cy: 56, price: 700, name: 'South Farm' },
+    { cx: 74, cy: 52, price: 900, name: 'Lake Farm' },
+  ];
+
+  // ---------- World generation (deterministic) ----------
+  // Noise-warped Voronoi patchwork. Region borders → dirt roads, a diagonal
+  // highway crosses the map, leftover grass gets tree clusters.
+  let GEN = null;
+  function generate() {
+    if (GEN) return GEN;
+    const GW = GRID_W, GH = GRID_H;
+    let s = 20240611 >>> 0;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const scols = 13, srows = 10, seeds = [];
+    for (let r = 0; r < srows; r++) for (let c = 0; c < scols; c++)
+      seeds.push({ x: (c + 0.5) * GW / scols + (rnd() - 0.5) * (GW / scols) * 0.9,
+                   y: (r + 0.5) * GH / srows + (rnd() - 0.5) * (GH / srows) * 0.9 });
+    const warp = (cx, cy) => [
+      cx + 2.8 * Math.sin(cy * 0.33 + 1.1) + 1.5 * Math.sin(cy * 0.14 + 4.2) + 1.1 * Math.cos(cx * 0.21 + 0.6),
+      cy + 2.8 * Math.sin(cx * 0.30 + 2.4) + 1.5 * Math.sin(cx * 0.13 + 0.3) + 1.1 * Math.cos(cy * 0.23 + 1.9),
+    ];
+    const idx = (x, y) => y * GW + x;
+    const region = new Array(GW * GH).fill(-1);
+    for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+      const w = warp(cx, cy); let best = -1, bd = Infinity;
+      for (let i = 0; i < seeds.length; i++) { const dx = seeds[i].x - w[0], dy = seeds[i].y - w[1], d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
+      region[idx(cx, cy)] = best;
+    }
+    // diagonal highway: distance from line through (0.78*GW, 0) → (0.22*GW, GH)
+    const hx0 = GW * 0.78, hy0 = 0, hx1 = GW * 0.22, hy1 = GH;
+    const hdx = hx1 - hx0, hdy = hy1 - hy0, hlen = Math.hypot(hdx, hdy);
+    const highwayDist = (x, y) => Math.abs((x - hx0) * hdy - (y - hy0) * hdx) / hlen;
+
+    const kind = new Array(GW * GH).fill('grass'); // grass | field | road | hw | farm
+    for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+      let nearFarm = false;
+      for (const f of FARMS) if (Math.abs(cx - f.cx) <= 3 && Math.abs(cy - f.cy) <= 3) { nearFarm = true; break; }
+      if (nearFarm) { kind[idx(cx, cy)] = 'farm'; continue; }
+      const w = warp(cx, cy);
+      if (highwayDist(w[0], w[1]) < 1.05) { kind[idx(cx, cy)] = 'hw'; continue; }
+      if (cx === 0 || cy === 0 || cx === GW - 1 || cy === GH - 1) continue;
+      const r = region[idx(cx, cy)];
+      const border = region[idx(cx + 1, cy)] !== r || region[idx(cx, cy + 1)] !== r;
+      kind[idx(cx, cy)] = border ? 'road' : 'field';
+    }
+    // connected field components
+    const seen = new Array(GW * GH).fill(false), comps = [];
+    for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+      if (kind[idx(cx, cy)] !== 'field' || seen[idx(cx, cy)]) continue;
+      const stack = [[cx, cy]], cells = []; seen[idx(cx, cy)] = true;
+      while (stack.length) {
+        const [x, y] = stack.pop(); cells.push([x, y]);
+        for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]])
+          if (nx >= 0 && ny >= 0 && nx < GW && ny < GH && kind[idx(nx, ny)] === 'field' && !seen[idx(nx, ny)]) { seen[idx(nx, ny)] = true; stack.push([nx, ny]); }
+      }
+      comps.push(cells);
+    }
+    // tiny scraps become grass again
+    const kept = [], scrap = [];
+    comps.forEach(c => (c.length >= 8 ? kept : scrap).push(c));
+    scrap.flat().forEach(([x, y]) => { kind[idx(x, y)] = 'grass'; });
+    kept.sort((a, b) => {
+      const ca = centroidOf(a), cb = centroidOf(b);
+      return (ca[1] - cb[1]) || (ca[0] - cb[0]);
+    });
+    const fieldTpl = kept.slice(0, 110).map((cells, i) => ({ name: String(i + 1), cells }));
+    kept.slice(110).flat().forEach(([x, y]) => { kind[idx(x, y)] = 'grass'; });
+
+    const roads = [], hws = [];
+    for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+      if (kind[idx(cx, cy)] === 'road') roads.push([cx, cy]);
+      else if (kind[idx(cx, cy)] === 'hw') hws.push([cx, cy]);
+    }
+    // tree clusters on remaining grass
+    const trees = [];
+    for (let k = 0; k < 90; k++) {
+      const ccx = rnd() * GW, ccy = rnd() * GH;
+      const n = 3 + Math.floor(rnd() * 7);
+      for (let j = 0; j < n; j++) {
+        const tx = ccx + (rnd() - rnd()) * 3.4, ty = ccy + (rnd() - rnd()) * 3.4;
+        const gx = Math.floor(tx), gy = Math.floor(ty);
+        if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) continue;
+        if (kind[idx(gx, gy)] !== 'grass') continue;
+        trees.push({ x: tx * CELL, y: ty * CELL, s: 0.75 + rnd() * 0.6, v: rnd() });
+      }
+    }
+    GEN = { fieldTpl, roads, hws, trees };
+    return GEN;
+  }
+  function centroidOf(cells) {
+    let sx = 0, sy = 0; for (const [x, y] of cells) { sx += x; sy += y; }
+    return [sx / cells.length, sy / cells.length];
+  }
+
+  // ---------- State ----------
+  const SAVE_KEY = 'minifarmer.v7';
+  let state, fields, vehicles, cellMap, allCells, critters;
+  const cam = { x: 0, y: 0 };
+  let zoom = 0.8;
+
+  function fieldPrice(f) {
+    const [cx, cy] = f.centroid;
+    const d = Math.hypot(cx - FARMS[0].cx, cy - FARMS[0].cy);
+    const diag = Math.hypot(GRID_W, GRID_H);
+    let p = f.cells.length * 2.2 * (0.7 + 1.6 * d / diag);
+    if (f.type === 'pasture') p += f.herd * 40;
+    return Math.max(15, Math.round(p / 5) * 5);
+  }
+  function buildFields(fromSave) {
+    const tpl = fromSave || generate().fieldTpl;
+    fields = tpl.map((f, fi) => {
+      const cells = f.cells.map(cc => {
+        const cx = Array.isArray(cc) ? cc[0] : cc.cx, cy = Array.isArray(cc) ? cc[1] : cc.cy;
+        return { cx, cy, fi, crop: cc.crop || null, plantedAt: cc.plantedAt || 0, reserved: false };
+      });
+      return { name: f.name, plannedCrop: f.plannedCrop || 'wheat', owned: !!f.owned, lastPay: f.lastPay || 0, cells };
+    });
+    cellMap = new Map(); allCells = [];
+    const PALETTE = ['#d2a63c', '#c19a42', '#b98f33', '#dbb44f', '#c4ad45', '#cba039'];
+    fields.forEach((f, fi) => {
+      f.minx = Infinity; f.miny = Infinity; f.maxx = -Infinity; f.maxy = -Infinity;
+      let sx = 0, sy = 0;
+      const inField = new Set();
+      f.cells.forEach(c => {
+        cellMap.set(c.cx + ',' + c.cy, c); allCells.push(c);
+        inField.add(c.cx + ',' + c.cy);
+        f.minx = Math.min(f.minx, c.cx); f.miny = Math.min(f.miny, c.cy);
+        f.maxx = Math.max(f.maxx, c.cx); f.maxy = Math.max(f.maxy, c.cy);
+        sx += c.cx; sy += c.cy;
+      });
+      f.centroid = [sx / f.cells.length, sy / f.cells.length];
+      // pasture assignment: deterministic by index+size, mid-size parcels only
+      const h = (fi * 2654435761) >>> 0;
+      f.type = (h % 6 === 2 && f.cells.length >= 10 && f.cells.length <= 42) ? 'pasture' : 'crop';
+      if (f.type === 'pasture') {
+        f.animal = ['cow', 'sheep', 'chicken'][h % 3];
+        f.herd = Math.max(2, Math.min(7, Math.round(f.cells.length / 6)));
+      }
+      f.price = fieldPrice(f);
+      f.tone = PALETTE[(fi * 7 + f.cells.length) % PALETTE.length];
+      f.toneDark = mix(f.tone, '#4a4520', 0.14);
+      // parcel outline segments (cell units)
+      f.edges = [];
+      f.cells.forEach(c => {
+        if (!inField.has(c.cx + ',' + (c.cy - 1))) f.edges.push([c.cx, c.cy, c.cx + 1, c.cy]);
+        if (!inField.has(c.cx + ',' + (c.cy + 1))) f.edges.push([c.cx, c.cy + 1, c.cx + 1, c.cy + 1]);
+        if (!inField.has((c.cx - 1) + ',' + c.cy)) f.edges.push([c.cx, c.cy, c.cx, c.cy + 1]);
+        if (!inField.has((c.cx + 1) + ',' + c.cy)) f.edges.push([c.cx + 1, c.cy, c.cx + 1, c.cy + 1]);
+      });
+    });
+    // wandering critters for every pasture (visible even before you buy)
+    critters = [];
+    fields.forEach((f, fi) => {
+      if (f.type !== 'pasture') return;
+      for (let i = 0; i < f.herd; i++) {
+        const c = f.cells[(i * 13) % f.cells.length];
+        critters.push({ fi, x: c.cx * CELL + CELL / 2, y: c.cy * CELL + CELL / 2, tx: 0, ty: 0, wait: Math.random() * 3, moving: false });
+      }
+    });
+  }
+  function farmPark(fi, slot) {
+    const f = FARMS[fi];
+    return { x: f.cx * CELL + 2 + (slot % 3) * 22, y: f.cy * CELL + 36 + Math.floor(slot / 3) * 20 };
+  }
+  function load() {
+    generate();
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+      if (s && Array.isArray(s.fields)) {
+        state = { coins: s.coins, seed: s.seed || 'wheat', workers: s.workers || 2, farmsOwned: s.farmsOwned || [true, false, false, false, false], activeFarm: s.activeFarm || 0 };
+        buildFields(s.fields);
+        vehicles = (s.vehicles || []).map(v => ({ type: v.type, farm: v.farm || 0, x: v.x, y: v.y, tx: v.x, ty: v.y, state: 'parked', crewed: false, cell: null, timer: 0, angle: 0 }));
+        if (!vehicles.length) vehicles = defaultVehicles();
+        if (s.cam) { cam.x = s.cam.x; cam.y = s.cam.y; zoom = s.cam.z || 0.8; }
+        // cap offline pasture accrual at 4h
+        const capped = Date.now() - 4 * 3600 * 1000;
+        fields.forEach(f => { if (f.type === 'pasture' && f.owned) f.lastPay = Math.max(f.lastPay || Date.now(), capped); });
+        return;
+      }
+    } catch (_) {}
+    state = { coins: 150, seed: 'wheat', workers: 2, farmsOwned: [true, false, false, false, false], activeFarm: 0 };
+    buildFields(null);
+    let best = -1, bd = Infinity;
+    fields.forEach((f, i) => {
+      if (f.type !== 'crop') return;
+      const d = Math.hypot(f.centroid[0] - FARMS[0].cx, f.centroid[1] - FARMS[0].cy);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best >= 0) fields[best].owned = true;
+    vehicles = defaultVehicles();
+    cam.x = FARMS[0].cx * CELL - 120; cam.y = FARMS[0].cy * CELL - 200;
+  }
+  function defaultVehicles() {
+    return ['tractor', 'harvester'].map((t, i) => {
+      const p = farmPark(0, i);
+      return { type: t, farm: 0, x: p.x, y: p.y, tx: p.x, ty: p.y, state: 'parked', crewed: false, cell: null, timer: 0, angle: 0 };
+    });
+  }
+  function save() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        coins: state.coins, seed: state.seed, workers: state.workers, farmsOwned: state.farmsOwned, activeFarm: state.activeFarm,
+        cam: { x: cam.x, y: cam.y, z: zoom },
+        fields: fields.map(f => ({ name: f.name, plannedCrop: f.plannedCrop, owned: f.owned, lastPay: f.lastPay, cells: f.cells.map(c => ({ cx: c.cx, cy: c.cy, crop: c.crop, plantedAt: c.plantedAt })) })),
+        vehicles: vehicles.map(v => ({ type: v.type, farm: v.farm, x: v.x, y: v.y })),
+      }));
+    } catch (_) {}
+  }
+  load();
+  setInterval(save, 4000);
+  window.addEventListener('beforeunload', save);
+
+  const countType = (t) => vehicles.filter(v => v.type === t).length;
+  const freeWorkers = () => state.workers - vehicles.filter(v => v.crewed).length;
+  const ownedAnimals = () => fields.reduce((n, f) => n + (f.type === 'pasture' && f.owned ? f.herd : 0), 0);
+
+  // ---------- HUD / dock ----------
+  const el = (id) => document.getElementById(id);
+  function renderHud() {
+    el('coins').textContent = Math.floor(state.coins);
+    el('workers').textContent = freeWorkers() + '/' + state.workers;
+    el('tractors').textContent = countType('tractor');
+    el('harvesters').textContent = countType('harvester');
+    el('animals').textContent = ownedAnimals();
+  }
+  const seedsRow = el('seeds');
+  SEEDS.forEach(id => {
+    const c = CROPS[id];
+    const b = document.createElement('div');
+    b.className = 'btn' + (state.seed === id ? ' sel' : '');
+    b.dataset.seed = id;
+    b.innerHTML = `<div class="em">${c.emoji}</div><div class="nm">${c.name}</div><div class="sub">🪙${c.cost}→${c.sell}/cell</div>`;
+    b.onclick = () => { state.seed = id; document.querySelectorAll('[data-seed]').forEach(e => e.classList.toggle('sel', e.dataset.seed === id)); };
+    seedsRow.appendChild(b);
+  });
+  const hireRow = el('hire');
+  const bWorker = document.createElement('div'); bWorker.className = 'btn'; bWorker.onclick = hireWorker; hireRow.appendChild(bWorker);
+  const bTractor = document.createElement('div'); bTractor.className = 'btn'; bTractor.onclick = () => buyVehicle('tractor'); hireRow.appendChild(bTractor);
+  const bHarv = document.createElement('div'); bHarv.className = 'btn'; bHarv.onclick = () => buyVehicle('harvester'); hireRow.appendChild(bHarv);
+  function renderDock() {
+    bWorker.innerHTML = `<div class="em">👷</div><div class="nm">Hire Worker</div><div class="sub">🪙${workerPrice(state.workers)}</div>`;
+    bTractor.innerHTML = `<div class="em">🚜</div><div class="nm">Buy Tractor</div><div class="sub">🪙${tractorPrice(countType('tractor'))} @ ${FARMS[state.activeFarm].name}</div>`;
+    bHarv.innerHTML = `<div class="em">🌾</div><div class="nm">Buy Harvester</div><div class="sub">🪙${harvesterPrice(countType('harvester'))} @ ${FARMS[state.activeFarm].name}</div>`;
+  }
+  function hireWorker() { const p = workerPrice(state.workers); if (state.coins < p) return flash('Not enough coins to hire'); state.coins -= p; state.workers++; renderHud(); renderDock(); save(); }
+  function buyVehicle(type) {
+    const p = type === 'tractor' ? tractorPrice(countType('tractor')) : harvesterPrice(countType('harvester'));
+    if (state.coins < p) return flash('Not enough coins for ' + type);
+    state.coins -= p;
+    const fi = state.activeFarm;
+    const slot = vehicles.filter(v => v.farm === fi).length;
+    const pos = farmPark(fi, slot);
+    vehicles.push({ type, farm: fi, x: pos.x, y: pos.y, tx: pos.x, ty: pos.y, state: 'parked', crewed: false, cell: null, timer: 0, angle: 0 });
+    flash(`${type === 'tractor' ? '🚜 Tractor' : '🌾 Harvester'} delivered to ${FARMS[fi].name}`);
+    renderHud(); renderDock(); save();
+  }
+
+  // ---------- Canvas / camera ----------
+  const canvas = el('c'), ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+  const MINZ = 0.3, MAXZ = 1.5;
+  function resize() { dpr = window.devicePixelRatio || 1; W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); clampCam(); }
+  window.addEventListener('resize', resize);
+  function clampCam() {
+    const vw = W / zoom, vh = H / zoom;
+    cam.x = vw >= WORLD.w ? (WORLD.w - vw) / 2 : Math.min(WORLD.w - vw, Math.max(0, cam.x));
+    cam.y = vh >= WORLD.h ? (WORLD.h - vh) / 2 : Math.min(WORLD.h - vh, Math.max(0, cam.y));
+  }
+
+  // ---------- Growth ----------
+  const ripe = (c) => c.crop && (Date.now() - c.plantedAt) >= CROPS[c.crop].grow * 1000;
+  const growth = (c) => c.crop ? Math.min(1, (Date.now() - c.plantedAt) / (CROPS[c.crop].grow * 1000)) : 0;
+
+  // ---------- Crew logic ----------
+  const pops = [];
+  function cellCenter(c) { return { x: c.cx * CELL + CELL / 2, y: c.cy * CELL + CELL / 2 }; }
+  function findWork(v) {
+    let best = null, bd = Infinity;
+    for (const c of allCells) {
+      const f = fields[c.fi];
+      if (c.reserved || !f.owned || f.type !== 'crop') continue;
+      let ok = false;
+      if (v.type === 'tractor') ok = !c.crop && state.coins >= CROPS[f.plannedCrop].cost;
+      else ok = ripe(c);
+      if (!ok) continue;
+      const d = Math.hypot(c.cx * CELL - v.x, c.cy * CELL - v.y);
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
+  }
+  function assignCell(v, c) { c.reserved = true; v.cell = c; const cc = cellCenter(c); v.tx = cc.x; v.ty = cc.y; v.state = 'driving'; }
+  let assignT = 0;
+  function crewParked() {
+    for (const v of vehicles) {
+      if (v.state !== 'parked' || v.crewed) continue;
+      if (freeWorkers() <= 0) break;
+      const c = findWork(v);
+      if (c) { v.crewed = true; assignCell(v, c); }
+    }
+  }
+  function applyWork(v) {
+    const c = v.cell; if (!c) return;
+    if (v.type === 'tractor') {
+      const crop = fields[c.fi].plannedCrop, def = CROPS[crop];
+      if (!c.crop && state.coins >= def.cost) { state.coins -= def.cost; c.crop = crop; c.plantedAt = Date.now(); }
+    } else if (ripe(c)) {
+      const pay = CROPS[c.crop].sell; state.coins += pay;
+      pops.push({ x: cellCenter(c).x, y: cellCenter(c).y, text: '+' + pay, life: 1 });
+      c.crop = null;
+    }
+    c.reserved = false; v.cell = null; renderHud();
+  }
+  function moveTo(o, dt, speed) {
+    const dx = o.tx - o.x, dy = o.ty - o.y, d = Math.hypot(dx, dy);
+    if (o.angle !== undefined) o.angle = Math.atan2(dy, dx);
+    if (d < 2) { o.x = o.tx; o.y = o.ty; return true; }
+    const step = Math.min(d, speed * dt); o.x += dx / d * step; o.y += dy / d * step; return false;
+  }
+  function updateVehicles(dt) {
+    assignT += dt; if (assignT >= 0.2) { assignT = 0; crewParked(); }
+    for (const v of vehicles) {
+      if (v.state === 'driving') { if (moveTo(v, dt, VSPEED)) { v.state = 'working'; v.timer = WORK; } }
+      else if (v.state === 'working') {
+        v.timer -= dt;
+        if (v.timer <= 0) {
+          applyWork(v);
+          const n = findWork(v);
+          if (n) assignCell(v, n);
+          else { const slot = Math.max(0, vehicles.filter(o => o.farm === v.farm).indexOf(v)); const p = farmPark(v.farm, slot); v.tx = p.x; v.ty = p.y; v.state = 'returning'; }
+        }
+      }
+      else if (v.state === 'returning') { if (moveTo(v, dt, VSPEED)) { v.state = 'parked'; v.crewed = false; renderHud(); } }
+    }
+  }
+
+  // ---------- Pastures ----------
+  function updatePastures() {
+    const now = Date.now();
+    for (const f of fields) {
+      if (f.type !== 'pasture' || !f.owned) continue;
+      if (!f.lastPay) f.lastPay = now;
+      const def = ANIMALS[f.animal], per = def.every * 1000;
+      const n = Math.floor((now - f.lastPay) / per);
+      if (n > 0) {
+        const gain = n * f.herd * def.value;
+        state.coins += gain; f.lastPay += n * per;
+        pops.push({ x: f.centroid[0] * CELL, y: f.centroid[1] * CELL, text: '+' + gain + ' ' + def.emoji, life: 1 });
+        renderHud();
+      }
+    }
+  }
+  function updateCritters(dt) {
+    for (const a of critters) {
+      const f = fields[a.fi];
+      if (a.moving) {
+        if (moveTo(a, dt, 11)) { a.moving = false; a.wait = 1.5 + Math.random() * 4; }
+      } else {
+        a.wait -= dt;
+        if (a.wait <= 0) {
+          const c = f.cells[Math.floor(Math.random() * f.cells.length)];
+          a.tx = c.cx * CELL + 3 + Math.random() * (CELL - 6);
+          a.ty = c.cy * CELL + 3 + Math.random() * (CELL - 6);
+          a.moving = true;
+        }
+      }
+    }
+  }
+
+  // ---------- Input ----------
+  let down = false, moved = false, sx = 0, sy = 0, cx0 = 0, cy0 = 0, hoverField = -1, hoverFarm = -1;
+  const keys = {};
+  window.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if (['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault(); keys[k] = true; });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  const toWorld = (mx, my) => ({ x: cam.x + mx / zoom, y: cam.y + my / zoom });
+
+  canvas.addEventListener('mousedown', e => { down = true; moved = false; sx = e.clientX; sy = e.clientY; cx0 = cam.x; cy0 = cam.y; });
+  window.addEventListener('mouseup', e => { if (down && !moved) handleClick(e); down = false; });
+  canvas.addEventListener('mousemove', e => {
+    const b = canvas.getBoundingClientRect(); const mx = e.clientX - b.left, my = e.clientY - b.top;
+    if (down) { const ddx = e.clientX - sx, ddy = e.clientY - sy; if (Math.abs(ddx) + Math.abs(ddy) > 4) moved = true; cam.x = cx0 - ddx / zoom; cam.y = cy0 - ddy / zoom; clampCam(); }
+    const w = toWorld(mx, my);
+    hoverFarm = farmAt(w.x, w.y);
+    hoverField = hoverFarm >= 0 ? -1 : fieldAt(w.x, w.y);
+  });
+  canvas.addEventListener('mouseleave', () => { hoverField = -1; hoverFarm = -1; });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const b = canvas.getBoundingClientRect(); const mx = e.clientX - b.left, my = e.clientY - b.top;
+    const w = toWorld(mx, my);
+    zoom = Math.min(MAXZ, Math.max(MINZ, zoom * (e.deltaY > 0 ? 0.88 : 1.14)));
+    cam.x = w.x - mx / zoom; cam.y = w.y - my / zoom; clampCam();
+  }, { passive: false });
+
+  function fieldAt(wx, wy) { const c = cellMap.get(Math.floor(wx / CELL) + ',' + Math.floor(wy / CELL)); return c ? c.fi : -1; }
+  function farmAt(wx, wy) {
+    for (let i = 0; i < FARMS.length; i++) {
+      const f = FARMS[i], x = f.cx * CELL, y = f.cy * CELL;
+      if (wx >= x - 12 && wx <= x + 58 && wy >= y - 22 && wy <= y + 34) return i;
+    }
+    return -1;
+  }
+  function handleClick(e) {
+    const b = canvas.getBoundingClientRect(); const w = toWorld(e.clientX - b.left, e.clientY - b.top);
+    const fa = farmAt(w.x, w.y);
+    if (fa >= 0) {
+      if (state.farmsOwned[fa]) { state.activeFarm = fa; flash(`${FARMS[fa].name} is now your active farm`); renderDock(); save(); }
+      else if (state.coins >= FARMS[fa].price) { state.coins -= FARMS[fa].price; state.farmsOwned[fa] = true; state.activeFarm = fa; flash(`🏠 ${FARMS[fa].name} purchased! Machines are bought here now`); renderHud(); renderDock(); save(); }
+      else flash(`${FARMS[fa].name} costs 🪙${FARMS[fa].price}`);
+      return;
+    }
+    const fi = fieldAt(w.x, w.y);
+    if (fi < 0) return;
+    const f = fields[fi];
+    if (!f.owned) {
+      if (state.coins >= f.price) {
+        state.coins -= f.price; f.owned = true;
+        if (f.type === 'pasture') { f.lastPay = Date.now(); flash(`Pasture ${f.name}: ${f.herd} ${ANIMALS[f.animal].emoji} now earn for you`); }
+        else flash(`Field ${f.name} purchased (${f.cells.length} cells)`);
+        renderHud(); save();
+      } else flash(`${f.type === 'pasture' ? 'Pasture' : 'Field'} ${f.name} costs 🪙${f.price}`);
+    } else if (f.type === 'crop') { f.plannedCrop = state.seed; flash(`Field ${f.name} → plant ${CROPS[state.seed].emoji}`); save(); }
+    else { const d = ANIMALS[f.animal]; flash(`Pasture ${f.name}: ${f.herd} ${d.emoji} sell ${d.product} (+🪙${f.herd * d.value}/${d.every}s)`); }
+  }
+
+  let hintT = 0;
+  function flash(msg) { el('hint').textContent = msg; hintT = 2.4; }
+  function hoverText() {
+    if (hoverFarm >= 0) {
+      const f = FARMS[hoverFarm];
+      if (state.farmsOwned[hoverFarm]) return `${f.name}${state.activeFarm === hoverFarm ? ' · active' : ' · click to set active'}`;
+      return `${f.name} · 🪙${f.price} — click to buy`;
+    }
+    if (hoverField < 0) return 'Drag to pan · wheel to zoom';
+    const f = fields[hoverField];
+    if (f.type === 'pasture') {
+      const d = ANIMALS[f.animal];
+      if (!f.owned) return `Pasture ${f.name} · ${f.herd} ${d.emoji} · 🪙${f.price} — click to buy`;
+      return `Pasture ${f.name} · ${f.herd} ${d.emoji} · +🪙${f.herd * d.value} every ${d.every}s`;
+    }
+    if (!f.owned) return `Field ${f.name} · ${f.cells.length} cells · 🪙${f.price} — click to buy`;
+    let rip = 0; for (const c of f.cells) if (ripe(c)) rip++;
+    return `Field ${f.name} · ${f.cells.length} cells · plan ${CROPS[f.plannedCrop].emoji} · ${rip} ripe`;
+  }
+
+  // ---------- Drawing ----------
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function hex(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
+  function mix(a, b, t) { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`; }
+
+  function drawVehicle(v) {
+    ctx.save(); ctx.translate(v.x, v.y);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 4, 12, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(v.angle);
+    ctx.fillStyle = '#262626'; rr(-9, -9, 7, 6, 2); ctx.fill(); rr(-9, 3, 7, 6, 2); ctx.fill(); rr(5, -7, 5, 5, 2); ctx.fill(); rr(5, 2, 5, 5, 2); ctx.fill();
+    ctx.fillStyle = v.type === 'tractor' ? '#3aa655' : '#e07a2c'; rr(-9, -7, 17, 14, 4); ctx.fill();
+    if (v.type === 'harvester') { ctx.fillStyle = '#f0c14b'; rr(8, -9, 4, 18, 2); ctx.fill(); }
+    ctx.fillStyle = v.type === 'tractor' ? '#2f8a47' : '#c05e18'; rr(-5, -5, 8, 10, 3); ctx.fill();
+    if (v.crewed) { ctx.fillStyle = '#f4d1a6'; ctx.beginPath(); ctx.arc(-1, 0, 2.4, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+  function drawFarm(i) {
+    const f = FARMS[i], x = f.cx * CELL, y = f.cy * CELL;
+    const owned = state.farmsOwned[i];
+    ctx.globalAlpha = owned ? 1 : 0.62;
+    ctx.fillStyle = '#b0553f'; rr(x - 4, y - 2, 46, 30, 5); ctx.fill();
+    ctx.fillStyle = '#8a3f2e'; ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 19, y - 16); ctx.lineTo(x + 46, y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(owned ? '🏠' : '🔒', x + 19, y + 13);
+    ctx.globalAlpha = 1;
+    if (owned && state.activeFarm === i) { rr(x - 10, y - 20, 58, 54, 8); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2 / zoom; ctx.stroke(); }
+    const fs = Math.min(13, 11 / zoom);
+    ctx.font = `bold ${fs}px "Segoe UI"`; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillText(owned ? f.name : `🪙${f.price}`, x + 19.6, y + 41.6 / Math.max(zoom, 0.7));
+    ctx.fillStyle = '#fff'; ctx.fillText(owned ? f.name : `🪙${f.price}`, x + 19, y + 41 / Math.max(zoom, 0.7));
+  }
+  function drawTree(tr) {
+    const r = 6.5 * tr.s;
+    ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(tr.x + 1.5, tr.y + 2, r * 0.9, r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5b4226'; ctx.fillRect(tr.x - 1, tr.y - 1, 2, 4);
+    ctx.fillStyle = tr.v > 0.5 ? '#3e7d32' : '#356e2b';
+    ctx.beginPath(); ctx.arc(tr.x, tr.y - r * 0.55, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.12)';
+    ctx.beginPath(); ctx.arc(tr.x - r * 0.3, tr.y - r * 0.75, r * 0.45, 0, Math.PI * 2); ctx.fill();
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const pan = 300 * dt / zoom;
+    if (keys['a'] || keys['arrowleft']) cam.x -= pan;
+    if (keys['d'] || keys['arrowright']) cam.x += pan;
+    if (keys['w'] || keys['arrowup']) cam.y -= pan;
+    if (keys['s'] || keys['arrowdown']) cam.y += pan;
+    clampCam();
+
+    if (hintT > 0) { hintT -= dt; if (hintT <= 0) el('hint').textContent = hoverText(); } else el('hint').textContent = hoverText();
+    updateVehicles(dt);
+    updatePastures();
+    updateCritters(dt);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#79bd55'; ctx.fillRect(0, 0, W, H);
+    ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, -cam.x * dpr * zoom, -cam.y * dpr * zoom);
+    const vx0 = cam.x, vy0 = cam.y, vx1 = cam.x + W / zoom, vy1 = cam.y + H / zoom;
+
+    // grass checker
+    const gs = 36;
+    ctx.fillStyle = '#71b64e';
+    for (let gy = Math.floor(vy0 / gs) * gs; gy < vy1; gy += gs)
+      for (let gx = Math.floor(vx0 / gs) * gs; gx < vx1; gx += gs)
+        if (((gx / gs + gy / gs) & 1) === 0) ctx.fillRect(gx, gy, gs, gs);
+
+    // dirt roads + highway
+    const g = generate();
+    for (const [rx, ry] of g.roads) {
+      const x = rx * CELL, y = ry * CELL;
+      if (x < vx0 - CELL || y < vy0 - CELL || x > vx1 || y > vy1) continue;
+      ctx.fillStyle = ((rx + ry) & 1) ? '#cdbf93' : '#c5b78b';
+      ctx.fillRect(x, y, CELL, CELL);
+    }
+    for (const [rx, ry] of g.hws) {
+      const x = rx * CELL, y = ry * CELL;
+      if (x < vx0 - CELL || y < vy0 - CELL || x > vx1 || y > vy1) continue;
+      ctx.fillStyle = '#9c9c94'; ctx.fillRect(x, y, CELL, CELL);
+      ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(x + CELL / 2 - 1, y + 2, 2, 5);
+    }
+
+    const t = now / 1000;
+    for (let fi = 0; fi < fields.length; fi++) {
+      const f = fields[fi];
+      if (f.maxx * CELL < vx0 - CELL || f.minx * CELL > vx1 || f.maxy * CELL < vy0 - CELL || f.miny * CELL > vy1) continue;
+
+      if (f.type === 'pasture') {
+        for (const c of f.cells) {
+          const x = c.cx * CELL, y = c.cy * CELL;
+          ctx.fillStyle = ((c.cx + c.cy) & 1) ? '#8ccb63' : '#84c45c';
+          ctx.fillRect(x, y, CELL, CELL);
+        }
+      } else {
+        for (const c of f.cells) {
+          const x = c.cx * CELL, y = c.cy * CELL;
+          if (x < vx0 - CELL || y < vy0 - CELL || x > vx1 || y > vy1) continue;
+          let col;
+          if (!f.owned) col = ((c.cx + c.cy) & 1) ? f.tone : f.toneDark;
+          else if (!c.crop) col = '#7a5236';
+          else if (ripe(c)) col = CROPS[c.crop].color;
+          else col = mix('#6b8f3f', CROPS[c.crop].color, growth(c) * 0.85);
+          ctx.fillStyle = col; ctx.fillRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+          if (f.owned && ripe(c)) { ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(x + 3, y + 3, CELL - 9, CELL - 9); }
+          if (c.reserved) { ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 1.5, y + 1.5, CELL - 3, CELL - 3); }
+        }
+      }
+      // parcel outline (fence for pastures)
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of f.edges) { ctx.moveTo(x1 * CELL, y1 * CELL); ctx.lineTo(x2 * CELL, y2 * CELL); }
+      if (f.type === 'pasture') { ctx.strokeStyle = '#8a5a33'; ctx.lineWidth = 2.2; }
+      else if (f.owned) { ctx.strokeStyle = 'rgba(70,45,25,.75)'; ctx.lineWidth = 1.6; }
+      else { ctx.strokeStyle = 'rgba(96,78,30,.6)'; ctx.lineWidth = 1.2; }
+      ctx.stroke();
+
+      // number chip
+      const nx = f.centroid[0] * CELL + CELL / 2, ny = f.centroid[1] * CELL + CELL / 2;
+      const fs = 11 / Math.max(zoom, 0.5);
+      const cw = fs * (0.62 * f.name.length) + fs * 0.9, ch = fs * 1.5;
+      rr(nx - cw / 2, ny - ch / 2, cw, ch, ch / 2.4);
+      ctx.fillStyle = f.owned ? 'rgba(40,32,20,.72)' : 'rgba(40,32,20,.45)'; ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${fs}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(f.name, nx, ny + fs * 0.06);
+      if (!f.owned && hoverField === fi) {
+        ctx.font = `bold ${fs * 0.9}px "Segoe UI"`;
+        ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillText(`🪙${f.price}`, nx + fs * 0.05, ny + ch + fs * 0.05);
+        ctx.fillStyle = '#ffe9a8'; ctx.fillText(`🪙${f.price}`, nx, ny + ch);
+      }
+      if (hoverField === fi) {
+        ctx.beginPath();
+        for (const [x1, y1, x2, y2] of f.edges) { ctx.moveTo(x1 * CELL, y1 * CELL); ctx.lineTo(x2 * CELL, y2 * CELL); }
+        ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2.4 / Math.max(zoom, 0.6); ctx.stroke();
+      }
+      const badge = f.type === 'pasture' ? ANIMALS[f.animal].emoji : (f.owned ? CROPS[f.plannedCrop].emoji : null);
+      if (badge) { ctx.font = `${fs}px serif`; ctx.textAlign = 'left'; ctx.fillText(badge, nx + cw / 2 + 3, ny + fs * 0.06); }
+    }
+
+    // critters
+    ctx.font = '11px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const a of critters) {
+      if (a.x < vx0 - 20 || a.y < vy0 - 20 || a.x > vx1 + 20 || a.y > vy1 + 20) continue;
+      const em = ANIMALS[fields[a.fi].animal].emoji;
+      const bob = a.moving ? Math.sin(t * 9 + a.x) * 1.2 : 0;
+      ctx.fillText(em, a.x, a.y + bob);
+    }
+
+    for (const tr of g.trees) if (tr.x > vx0 - 20 && tr.y > vy0 - 20 && tr.x < vx1 + 20 && tr.y < vy1 + 20) drawTree(tr);
+    for (let i = 0; i < FARMS.length; i++) drawFarm(i);
+    for (const v of vehicles) if (v.x > vx0 - 30 && v.y > vy0 - 30 && v.x < vx1 + 30 && v.y < vy1 + 30) drawVehicle(v);
+
+    for (let k = pops.length - 1; k >= 0; k--) {
+      const p = pops[k]; p.life -= dt * 0.9; p.y -= dt * 20;
+      if (p.life <= 0) { pops.splice(k, 1); continue; }
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = '#1b5e20'; ctx.font = `bold ${13 / Math.max(zoom, 0.6)}px "Segoe UI"`; ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y); ctx.globalAlpha = 1;
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Boot ----------
+  resize(); renderHud(); renderDock();
+  requestAnimationFrame((t) => { last = t; frame(t); });
+})();
+</script>
+</body>
+</html>
