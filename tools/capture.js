@@ -17,32 +17,34 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, backgroundThrottling: false },
   });
   await win.loadFile(path.join(ROOT, 'index.html'));
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const js = (code) => win.webContents.executeJavaScript(code);
   const shot = async (name) => {
     for (let tries = 0; tries < 6; tries++) {
-      const img = await win.webContents.capturePage();
-      const buf = img.toPNG();
-      if (buf.length > 1000) {
-        fs.writeFileSync(path.join(OUT, name), buf);
-        console.log('saved docs/' + name + ' (' + buf.length + ' bytes)');
-        return;
-      }
+      const buf = (await win.webContents.capturePage()).toPNG();
+      if (buf.length > 1000) { fs.writeFileSync(path.join(OUT, name), buf); console.log('saved docs/' + name + ' (' + buf.length + ' bytes)'); return; }
       await sleep(600);
     }
     console.error('FAILED to capture ' + name);
   };
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const wheel = (dir, n, fx = 0.5, fy = 0.5) => js(`(() => { const c=document.getElementById('c'), b=c.getBoundingClientRect(); for(let i=0;i<${n};i++) c.dispatchEvent(new WheelEvent('wheel',{deltaY:${dir},clientX:b.left+b.width*${fx},clientY:b.top+b.height*${fy},bubbles:true,cancelable:true})); return 1; })()`);
 
-  await sleep(9000); // let the starting crew plant a few rows
+  // 1) gameplay close-up: wait for wheat to ripen/harvest, zoom onto the Home Farm + its field
+  await sleep(70000);
+  await wheel(-100, 4, 0.22, 0.24);
+  await sleep(800);
   await shot('screenshot-farm.png');
 
-  // zoom all the way out for the parcel-map shot
-  await win.webContents.executeJavaScript(`(() => {
-    const c = document.getElementById('c'); const b = c.getBoundingClientRect();
-    for (let i = 0; i < 12; i++) c.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2, bubbles: true, cancelable: true }));
-    return 1;
-  })()`);
-  await sleep(800);
+  // 2) full parcel map
+  await wheel(100, 22);
+  await sleep(700);
   await shot('screenshot-map.png');
+
+  // 3) market panel (silo has stock by now)
+  await sleep(6000);
+  await js(`document.getElementById('siloChip').click()`);
+  await sleep(600);
+  await shot('screenshot-market.png');
 
   app.quit();
 });
