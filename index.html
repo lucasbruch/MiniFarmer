@@ -519,17 +519,34 @@
     return false;
   }
 
+  const cellEligible = (v, c, f, siloRoom) => !c.reserved && (v.type === 'tractor'
+    ? (!c.crop && state.coins >= CROPS[f.plannedCrop].cost)
+    : (siloRoom && ripe(c)));
+  // Nearest eligible cell within a single field (keeps a vehicle finishing what it started).
+  function nearestInField(v, f, siloRoom) {
+    let best = null, bd = Infinity;
+    for (const c of f.cells) {
+      if (!cellEligible(v, c, f, siloRoom)) continue;
+      const dv = (c.cx * CELL - v.x) ** 2 + (c.cy * CELL - v.y) ** 2;
+      if (dv < bd) { bd = dv; best = c; }
+    }
+    return best;
+  }
   function findWork(v) {
-    // prioritize fields near the vehicle's home farm, with a nudge toward its current spot
-    const hx = FARMS[v.farm].cx * CELL, hy = FARMS[v.farm].cy * CELL;
     const siloRoom = siloUsed() < state.siloCap;
+    // Stick with the field already in progress until every cell in it is done.
+    if (v.field != null) {
+      const f = fields[v.field];
+      if (f && f.owned && f.type === 'crop') { const c = nearestInField(v, f, siloRoom); if (c) return c; }
+      v.field = null; // field finished (or lost) — free to choose a new one
+    }
+    // Fresh field: prioritize those near the vehicle's home farm, nudged toward its current spot.
+    const hx = FARMS[v.farm].cx * CELL, hy = FARMS[v.farm].cy * CELL;
     let best = null, bd = Infinity;
     for (const f of fields) {
       if (!f.owned || f.type !== 'crop') continue;
       for (const c of f.cells) {
-        if (c.reserved) continue;
-        const ok = v.type === 'tractor' ? (!c.crop && state.coins >= CROPS[f.plannedCrop].cost) : (siloRoom && ripe(c));
-        if (!ok) continue;
+        if (!cellEligible(v, c, f, siloRoom)) continue;
         const dh = (c.cx * CELL - hx) ** 2 + (c.cy * CELL - hy) ** 2;
         const dv = (c.cx * CELL - v.x) ** 2 + (c.cy * CELL - v.y) ** 2;
         const score = dh + 0.6 * dv;
@@ -538,7 +555,7 @@
     }
     return best;
   }
-  function assignCell(v, c) { c.reserved = true; v.cell = c; const cc = cellCenter(c); routeTo(v, cc.x, cc.y); v.state = 'driving'; }
+  function assignCell(v, c) { c.reserved = true; v.cell = c; v.field = c.fi; const cc = cellCenter(c); routeTo(v, cc.x, cc.y); v.state = 'driving'; }
   let assignT = 0;
   function crewParked() { for (const v of vehicles) { if (v.state !== 'parked' || v.crewed) continue; if (freeWorkers() <= 0) break; const c = findWork(v); if (c) { v.crewed = true; assignCell(v, c); } } }
   function applyWork(v) {
