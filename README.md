@@ -18,8 +18,13 @@ No engine, no frameworks: one HTML file of vanilla canvas JavaScript inside a fr
 - 👷 **Workers ≠ machines** — every vehicle needs a free worker. Balancing your labor pool against your fleet is the core decision.
 - 🛣️ **Road logistics** — vehicles path-find along the road network (and drive faster on it), routing around lakes. Where you station your machines genuinely matters.
 - 🏬 **Silo & market** — harvests fill a silo instead of paying instantly. Each crop's price drifts on its own cycle, so you decide *when to sell*. Upgrade silo capacity, or flip on auto-sell to stay hands-off. When the silo fills, harvesting pauses — and crops left standing too long spoil.
-- 🐄 **Pastures & animals** — some parcels come with wandering cows, sheep, or chickens. Buy the pasture and they earn passively (milk, wool, eggs), even while the app is closed (capped at 4 h).
-- 📈 **Statistics** — track total earned, spent, net profit, crops harvested / sold / planted / spoiled, and holdings.
+- 🌱 **Six crops, seasons & weather** — wheat, carrot, potato, corn, pumpkin, and grapes each thrive in different seasons. A 10-minute year of Spring → Summer → Autumn → Winter (plus rolling sun / rain / drought / frost) speeds or slows growth *baked in at planting time* and shifts prices, so *what* and *when* you plant matters. It all runs on the clock — nothing to babysit.
+- 📋 **Delivery contracts** — standing orders ask for a set quantity of a crop by a deadline for a premium over market. Fulfil them straight from your silo; new orders arrive automatically.
+- 🔧 **Upgrades** — invest in Irrigation (faster growth), Machinery (faster crews), Logistics (faster on roads), Trade Deals (better prices), and Fuel Economy (lower running costs).
+- 🛢️ **Running costs** — every worker and machine draws a small upkeep, so an idle fleet is a liability. Balance your labor and fleet against the work.
+- 🏆 **Milestones** — hit goals (bank 10k, own every farm, harvest 500 crops…) for cash rewards, with pop-up notifications and gentle sound cues when things need you.
+- 🐄 **Pastures & animals** — some parcels come with wandering cows, pigs, sheep, or chickens. Buy the pasture and they earn passively (milk, truffles, wool, eggs), even while the app is closed (capped at 4 h).
+- 📈 **Statistics** — track total earned, spent, net profit, crops harvested / sold / planted / spoiled, contracts filled, milestones, running cost, and holdings.
 - 💾 **Runs unattended** — real-time (and offline) growth, auto-save, and always-on-top so it keeps working while you don't.
 
 ## Installation
@@ -42,7 +47,7 @@ Start with 400 coins, 2 workers, 1 tractor, 1 harvester, and one free field next
 1. **Pick a seed** in the bottom bar, then **click one of your fields** to set what grows there. Your crews plant and harvest it automatically.
 2. **Buy land** — click blue-gray parcels to purchase them; click a locked 🔒 farm to buy it and make it your active base (new machines are delivered there).
 3. **Sell smart** — harvests pile up in your silo. Open the **📊 Market** (dock button or click the silo chip) and sell when prices are high; different crops peak at different times.
-4. **Scale up** — hire workers, buy tractors/harvesters, grab pastures for passive income, upgrade your silo.
+4. **Scale up** — hire workers, buy tractors/harvesters, grab pastures for passive income, and spend on **🔧 Upgrades** (growth, speed, prices, fuel). Keep an eye on the **🗓️ season/weather** chip and take **📋 Contracts** for bonus cash — but watch your running costs.
 
 ### Controls
 

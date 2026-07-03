@@ -33,7 +33,22 @@
   .btn .em { font-size: 17px; height: 20px; display: flex; align-items: center; justify-content: center; }
   .btn .nm { font-size: 10px; font-weight: 800; margin-top: 1px; }
   .btn .sub { font-size: 9.5px; color: #8a7256; }
-  #market, #stats { position: absolute; left: 12px; right: 12px; top: 12px; bottom: 12px; display: none; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: rgba(28,38,30,.94); color: #fff; z-index: 5; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  .btn .rate { font-size: 9px; margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 3px; color: #8a7256; }
+  .btn .rate .szn { letter-spacing: -1px; }
+  .btn .rate b { font-weight: 800; }
+  .btn .rate.good b { color: #2f9e44; }
+  .btn .rate.bad  b { color: #d9772e; }
+  .btn-bar { height: 4px; border-radius: 3px; background: rgba(0,0,0,.12); margin: 4px 3px 0; overflow: hidden; }
+  .btn-bar > div { height: 100%; background: #7cc353; border-radius: 3px; transition: width .25s, background .25s; }
+  #market, #stats, #contracts, #upgrades { position: absolute; left: 12px; right: 12px; top: 12px; bottom: 12px; display: none; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: rgba(28,38,30,.94); color: #fff; z-index: 5; box-shadow: 0 8px 30px rgba(0,0,0,.4); overflow-y: auto; }
+  .panel-note { font-size: 11.5px; opacity: .8; margin-bottom: 2px; }
+  .ct-need { width: 132px; } .up-name { width: 152px; }
+  #seasonChip span { font-weight: 800; }
+  #toasts { position: absolute; top: 10px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 8; }
+  .toast { background: rgba(28,38,30,.95); color: #fff; font-size: 12px; font-weight: 700; padding: 8px 14px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); border-left: 4px solid #7cc353; max-width: 90%; opacity: 1; transform: translateY(0); transition: opacity .35s, transform .35s; }
+  .toast.warn { border-left-color: #e5a13f; }
+  .toast.good { border-left-color: #57c46a; }
+  .toast.out { opacity: 0; transform: translateY(-8px); }
   .st-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 11px; background: rgba(255,255,255,.07); border-radius: 9px; font-size: 12.5px; font-weight: 600; }
   .st-val { font-weight: 800; }
   .st-div { height: 1px; background: rgba(255,255,255,.14); margin: 2px 0; }
@@ -54,6 +69,10 @@
   .mkt-foot { margin-top: auto; display: flex; gap: 10px; }
   .mkt-foot button { flex: 1; }
   .up { color: #79f079; } .down { color: #ff9090; }
+  .newgame-btn { margin-top: 8px; cursor: pointer; border: none; border-radius: 9px; padding: 10px; font-weight: 800; font-size: 12.5px; background: rgba(255,255,255,.14); color: #fff; transition: background .12s; }
+  .newgame-btn:hover { background: rgba(255,255,255,.22); }
+  .newgame-btn.armed { background: #e5645c; color: #fff; }
+  .newgame-btn.armed:hover { background: #ef7169; }
 </style>
 </head>
 <body>
@@ -71,6 +90,7 @@
       <div class="chip"><span id="hvIcon"></span> <span id="harvesters">0</span></div>
       <div class="chip">🐄 <span id="animals">0</span></div>
       <div class="chip silo" id="siloChip" title="Open market">🛖 <span id="silo">0/200</span></div>
+      <div class="chip" id="seasonChip" title="Season & weather">🌱 <span>Spring</span> ☀️</div>
       <div class="chip" id="statsChip" title="Statistics">📈</div>
       <div class="hud-spacer"></div>
       <div class="chip coins">🪙 <span id="coins">0</span></div>
@@ -83,6 +103,7 @@
   <div id="dock">
     <div class="row" id="seeds"></div>
     <div class="row" id="hire"></div>
+    <div class="row" id="panels"></div>
   </div>
 
 <script>
@@ -102,21 +123,94 @@
   const GRID_W = 240, GRID_H = 170;
   const WORLD = { w: GRID_W * CELL, h: GRID_H * CELL };
   const WORK = 0.28, VSPEED = 96, ROAD_MULT = 1.7, ROT_MULT = 1.8;
+  // season keys: 0 Spring, 1 Summer, 2 Autumn, 3 Winter — `seasons` lists a crop's thriving seasons
   const CROPS = {
-    wheat:   { name: 'Wheat',   emoji: '🌾', cost: 1, sell: 3,  grow: 60,  color: '#e3c565' },
-    carrot:  { name: 'Carrot',  emoji: '🥕', cost: 2, sell: 6,  grow: 180, color: '#e8863f' },
-    pumpkin: { name: 'Pumpkin', emoji: '🎃', cost: 5, sell: 16, grow: 420, color: '#d9772e' },
+    wheat:   { name: 'Wheat',   emoji: '🌾', cost: 1, sell: 3,  grow: 60,  color: '#e3c565', seasons: [1, 2] },
+    carrot:  { name: 'Carrot',  emoji: '🥕', cost: 2, sell: 6,  grow: 180, color: '#e8863f', seasons: [0, 2] },
+    potato:  { name: 'Potato',  emoji: '🥔', cost: 3, sell: 9,  grow: 240, color: '#c9a56b', seasons: [0, 1] },
+    corn:    { name: 'Corn',    emoji: '🌽', cost: 4, sell: 13, grow: 300, color: '#f2c94c', seasons: [1] },
+    pumpkin: { name: 'Pumpkin', emoji: '🎃', cost: 5, sell: 16, grow: 420, color: '#d9772e', seasons: [2] },
+    grapes:  { name: 'Grapes',  emoji: '🍇', cost: 7, sell: 26, grow: 600, color: '#8e5fb0', seasons: [1, 2] },
   };
-  const SEEDS = ['wheat', 'carrot', 'pumpkin'];
-  // per-animal income ≈ value/every coins/sec (cow .13, sheep .11, chicken .09)
+  const SEEDS = ['wheat', 'carrot', 'potato', 'corn', 'pumpkin', 'grapes'];
+  // per-animal income ≈ value/every coins/sec (cow .13, sheep .11, chicken .09, pig .12)
   const ANIMALS = {
     cow:     { emoji: '🐄', value: 4, every: 30, product: 'milk' },
+    pig:     { emoji: '🐖', value: 3, every: 25, product: 'truffles' },
     sheep:   { emoji: '🐑', value: 2, every: 18, product: 'wool' },
     chicken: { emoji: '🐔', value: 1, every: 11, product: 'eggs' },
   };
+  const ANIMAL_KEYS = ['cow', 'pig', 'sheep', 'chicken'];
   const workerPrice    = (n) => Math.round(30 * Math.pow(1.55, n));
   const tractorPrice   = (n) => Math.round(60 * Math.pow(1.7, n));
   const harvesterPrice = (n) => Math.round(95 * Math.pow(1.7, n));
+
+  // ---------- Seasons & weather (purely time-derived → deterministic & offline-safe) ----------
+  const SEASONS = [
+    { name: 'Spring', emoji: '🌱', tint: '#8fce5b' },
+    { name: 'Summer', emoji: '☀️', tint: '#7cc353' },
+    { name: 'Autumn', emoji: '🍂', tint: '#c9a24b' },
+    { name: 'Winter', emoji: '❄️', tint: '#cfe3ea' },
+  ];
+  const SEASON_LEN = 150;   // seconds per season → 10-minute year
+  const WEATHER_LEN = 40;   // seconds per weather slot
+  const WEATHER = {
+    sun:     { emoji: '☀️', name: 'Sunny',   gm: 1.0 },
+    rain:    { emoji: '🌧️', name: 'Rainy',   gm: 1.35 },
+    cloud:   { emoji: '☁️', name: 'Cloudy',  gm: 0.9 },
+    drought: { emoji: '🥵', name: 'Drought', gm: 0.6 },
+    frost:   { emoji: '🌨️', name: 'Frost',   gm: 0.55 },
+  };
+  const seasonIndexAt = (at) => Math.floor((at || Date.now()) / 1000 / SEASON_LEN) % 4;
+  function weatherKeyAt(at) {
+    const now = at || Date.now();
+    const slot = Math.floor(now / 1000 / WEATHER_LEN);
+    let h = ((slot + 1) * 2654435761) >>> 0; h ^= h >>> 15;
+    const season = seasonIndexAt(now), r = (h % 100) / 100;
+    if (season === 3) return r < 0.45 ? 'frost' : (r < 0.72 ? 'cloud' : 'sun');       // winter: cold & grey
+    if (season === 1) return r < 0.30 ? 'drought' : (r < 0.62 ? 'sun' : (r < 0.82 ? 'rain' : 'cloud')); // summer: hot
+    return r < 0.34 ? 'rain' : (r < 0.70 ? 'sun' : 'cloud');                           // spring/autumn: mild
+  }
+  // combined growth-rate factor baked in at planting time
+  function growthRate(crop, at) {
+    const season = seasonIndexAt(at);
+    const inSeason = CROPS[crop].seasons.includes(season);
+    let sm = inSeason ? 1.15 : 0.72;
+    if (season === 3 && !inSeason) sm = 0.5;                 // winter is hard on everything
+    const wm = WEATHER[weatherKeyAt(at)].gm;
+    const irr = 1 + 0.08 * (state.upgrades.irrigation || 0);
+    return sm * wm * irr;
+  }
+
+  // ---------- Upgrades (global, purchasable) ----------
+  const UPGRADES = {
+    irrigation: { emoji: '💧', name: 'Irrigation', max: 5, base: 180, mult: 1.7,  desc: (l) => `Crops grow +${l * 8}% faster` },
+    machinery:  { emoji: '⚙️', name: 'Machinery',  max: 5, base: 220, mult: 1.75, desc: (l) => `Machines work +${l * 10}% faster` },
+    roads:      { emoji: '🛣️', name: 'Logistics',  max: 4, base: 200, mult: 1.8,  desc: (l) => `+${Math.round(l * 15)}% road speed` },
+    market:     { emoji: '🏷️', name: 'Trade Deals', max: 5, base: 260, mult: 1.8, desc: (l) => `+${l * 6}% sell prices` },
+    fuel:       { emoji: '🛢️', name: 'Fuel Economy', max: 4, base: 160, mult: 1.7, desc: (l) => `-${l * 15}% running costs` },
+  };
+  const UPG_KEYS = ['irrigation', 'machinery', 'roads', 'market', 'fuel'];
+  const upgradeCost = (key) => Math.round(UPGRADES[key].base * Math.pow(UPGRADES[key].mult, state.upgrades[key] || 0));
+
+  // ---------- Running costs (upkeep) ----------
+  const UPKEEP_VEH = 0.05, UPKEEP_WORKER = 0.03;   // coins/sec, before Fuel Economy
+  function upkeepPerSec() {
+    const raw = vehicles.length * UPKEEP_VEH + state.workers * UPKEEP_WORKER;
+    return raw * (1 - 0.15 * (state.upgrades.fuel || 0));
+  }
+
+  // ---------- Milestones ----------
+  const MILESTONES = [
+    { id: 'coins1k',  name: 'Reach 1,000 coins',    reward: 150, test: () => state.coins >= 1000 },
+    { id: 'harvest50', name: 'Harvest 50 crops',    reward: 200, test: () => state.stats.harvested >= 50 },
+    { id: 'farms3',   name: 'Own 3 farms',          reward: 350, test: () => state.farmsOwned.filter(Boolean).length >= 3 },
+    { id: 'contracts5', name: 'Fulfill 5 contracts', reward: 400, test: () => (state.stats.contracts || 0) >= 5 },
+    { id: 'fleet6',   name: 'Run a fleet of 6',     reward: 300, test: () => vehicles.length >= 6 },
+    { id: 'coins10k', name: 'Bank 10,000 coins',    reward: 800, test: () => state.coins >= 10000 },
+    { id: 'allfarms', name: 'Own every farm',       reward: 1500, test: () => state.farmsOwned.every(Boolean) },
+    { id: 'harvest500', name: 'Harvest 500 crops',  reward: 1200, test: () => state.stats.harvested >= 500 },
+  ];
 
   const FARMS = [
     { cx: 22, cy: 86,   price: 0,    name: 'Home Farm' },
@@ -129,11 +223,11 @@
   ];
 
   // ---------- World generation (deterministic) ----------
-  let GEN = null;
+  let GEN = null, genSeed = 776610322;
   function generate() {
     if (GEN) return GEN;
     const GW = GRID_W, GH = GRID_H;
-    let s = 776610322 >>> 0;
+    let s = genSeed >>> 0;
     const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
     const idx = (x, y) => y * GW + x;
 
@@ -256,20 +350,23 @@
   let state, fields, vehicles, cellMap, critters;
   const cam = { x: 0, y: 0 };
   let zoom = 0.42;
+  const emptySilo = () => { const o = {}; for (const s of SEEDS) o[s] = 0; return o; };
+  const emptyStats = () => ({ earned: 0, spent: 0, harvested: 0, sold: 0, planted: 0, rotted: 0, contracts: 0 });
+  const emptyUpgrades = () => { const o = {}; for (const k of UPG_KEYS) o[k] = 0; return o; };
 
   function fieldPrice(f) {
     const [cx, cy] = f.centroid;
     const d = Math.hypot(cx - FARMS[0].cx, cy - FARMS[0].cy), diag = Math.hypot(GRID_W, GRID_H);
-    let p = f.cells.length * 1.7 * (0.6 + 1.9 * d / diag);
-    if (f.type === 'pasture') p += f.herd * 90;
-    return Math.max(20, Math.round(p / 5) * 5);
+    let p = f.cells.length * 12.75 * (0.6 + 1.9 * d / diag);
+    if (f.type === 'pasture') p += f.herd * 675;
+    return Math.max(150, Math.round(p / 5) * 5);
   }
   function buildFields(fromSave) {
     const tpl = fromSave || generate().fieldTpl;
     fields = tpl.map((f) => {
       const cells = f.cells.map(cc => {
         const cx = Array.isArray(cc) ? cc[0] : cc.cx, cy = Array.isArray(cc) ? cc[1] : cc.cy;
-        return { cx, cy, fi: 0, crop: cc.crop || null, plantedAt: cc.plantedAt || 0, reserved: false };
+        return { cx, cy, fi: 0, crop: cc.crop || null, plantedAt: cc.plantedAt || 0, eff: cc.eff || 0, reserved: false };
       });
       return { name: f.name, plannedCrop: f.plannedCrop || 'wheat', owned: !!f.owned, lastPay: f.lastPay || 0, cells };
     });
@@ -285,7 +382,7 @@
       f.centroid = [sx / f.cells.length, sy / f.cells.length];
       const h = (fi * 2654435761) >>> 0;
       f.type = (h % 5 === 2 && f.cells.length >= 20 && f.cells.length <= 140) ? 'pasture' : 'crop';
-      if (f.type === 'pasture') { f.animal = ['cow', 'sheep', 'chicken'][h % 3]; f.herd = Math.max(2, Math.min(10, Math.round(f.cells.length / 12))); }
+      if (f.type === 'pasture') { f.animal = ANIMAL_KEYS[h % ANIMAL_KEYS.length]; f.herd = Math.max(2, Math.min(10, Math.round(f.cells.length / 12))); }
       f.price = fieldPrice(f);
       f.edges = [];
       f.cells.forEach(c => {
@@ -307,7 +404,10 @@
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
       if (s && Array.isArray(s.fields)) {
-        state = { coins: s.coins, seed: s.seed || 'wheat', workers: s.workers || 2, farmsOwned: s.farmsOwned || [true], activeFarm: s.activeFarm || 0, silo: s.silo || { wheat: 0, carrot: 0, pumpkin: 0 }, siloCap: s.siloCap || 200, siloUp: s.siloUp || 0, autoSell: !!s.autoSell, stats: s.stats || { earned: 0, spent: 0, harvested: 0, sold: 0, planted: 0, rotted: 0 } };
+        state = { coins: s.coins, seed: SEEDS.includes(s.seed) ? s.seed : 'wheat', workers: s.workers || 2, farmsOwned: s.farmsOwned || [true], activeFarm: s.activeFarm || 0,
+          silo: Object.assign(emptySilo(), s.silo || {}), siloCap: s.siloCap || 200, siloUp: s.siloUp || 0, autoSell: !!s.autoSell,
+          upgrades: Object.assign(emptyUpgrades(), s.upgrades || {}), contracts: Array.isArray(s.contracts) ? s.contracts : [], milestones: s.milestones || {},
+          stats: Object.assign(emptyStats(), s.stats || {}) };
         while (state.farmsOwned.length < FARMS.length) state.farmsOwned.push(false);
         buildFields(s.fields);
         vehicles = (s.vehicles || []).map(v => ({ type: v.type, farm: v.farm || 0, x: v.x, y: v.y, tx: v.x, ty: v.y, state: 'parked', crewed: false, cell: null, timer: 0, angle: 0 }));
@@ -318,7 +418,8 @@
         return;
       }
     } catch (_) {}
-    state = { coins: 400, seed: 'wheat', workers: 2, farmsOwned: FARMS.map((_, i) => i === 0), activeFarm: 0, silo: { wheat: 0, carrot: 0, pumpkin: 0 }, siloCap: 200, siloUp: 0, autoSell: false, stats: { earned: 0, spent: 0, harvested: 0, sold: 0, planted: 0, rotted: 0 } };
+    state = { coins: 400, seed: 'wheat', workers: 2, farmsOwned: FARMS.map((_, i) => i === 0), activeFarm: 0, silo: emptySilo(), siloCap: 200, siloUp: 0, autoSell: false,
+      upgrades: emptyUpgrades(), contracts: [], milestones: {}, stats: emptyStats() };
     buildFields(null);
     // free starter: smallest crop field close to home
     let best = -1, bs = Infinity;
@@ -327,6 +428,14 @@
       const d = Math.hypot(f.centroid[0] - FARMS[0].cx, f.centroid[1] - FARMS[0].cy);
       if (d < 30) { const score = f.cells.length + d; if (score < bs) { bs = score; best = i; } }
     });
+    if (best < 0) {   // random maps may have no crop field within the radius → grab the nearest one
+      let bd = Infinity;
+      fields.forEach((f, i) => {
+        if (f.type !== 'crop') return;
+        const d = Math.hypot(f.centroid[0] - FARMS[0].cx, f.centroid[1] - FARMS[0].cy);
+        if (d < bd) { bd = d; best = i; }
+      });
+    }
     if (best >= 0) fields[best].owned = true;
     vehicles = defaultVehicles();
     cam.x = FARMS[0].cx * CELL - 200; cam.y = FARMS[0].cy * CELL - 240;
@@ -337,11 +446,24 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         coins: state.coins, seed: state.seed, workers: state.workers, farmsOwned: state.farmsOwned, activeFarm: state.activeFarm,
         silo: state.silo, siloCap: state.siloCap, siloUp: state.siloUp, autoSell: state.autoSell, stats: state.stats,
+        upgrades: state.upgrades, contracts: state.contracts, milestones: state.milestones,
         cam: { x: cam.x, y: cam.y, z: zoom },
-        fields: fields.map(f => ({ name: f.name, plannedCrop: f.plannedCrop, owned: f.owned, lastPay: f.lastPay, cells: f.cells.map(c => ({ cx: c.cx, cy: c.cy, crop: c.crop, plantedAt: c.plantedAt })) })),
+        fields: fields.map(f => ({ name: f.name, plannedCrop: f.plannedCrop, owned: f.owned, lastPay: f.lastPay, cells: f.cells.map(c => ({ cx: c.cx, cy: c.cy, crop: c.crop, plantedAt: c.plantedAt, eff: c.eff })) })),
         vehicles: vehicles.map(v => ({ type: v.type, farm: v.farm, x: v.x, y: v.y })),
       }));
     } catch (_) {}
+  }
+  function newGame() {
+    try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+    toggleMarket(false); toggleContracts(false); toggleUpgrades(false); toggleStats(false);
+    genSeed = (Math.random() * 4294967296) >>> 0;   // fresh randomly-shaped world
+    GEN = null;                                      // drop the memoized map so it regenerates
+    buildBase();                                     // redraw terrain for the new seed
+    load();   // no save present → fresh state, free starter field, camera reset to Home Farm
+    document.querySelectorAll('[data-seed]').forEach(e => e.classList.toggle('sel', e.dataset.seed === state.seed));
+    renderHud(); renderDock(); updateSeasonChip(); updateContracts();
+    save();
+    notify('🌱 New farm, fresh land — good luck!', 'good');
   }
   load();
   setInterval(save, 4000);
@@ -353,29 +475,54 @@
 
   // ---------- HUD / dock ----------
   const el = (id) => document.getElementById(id);
-  function renderHud() { el('coins').textContent = Math.floor(state.coins); el('workers').textContent = freeWorkers() + '/' + state.workers; el('tractors').textContent = countType('tractor'); el('harvesters').textContent = countType('harvester'); el('animals').textContent = ownedAnimals(); el('silo').textContent = siloUsed() + '/' + state.siloCap; }
+  function renderHud() { el('coins').textContent = Math.floor(state.coins); el('workers').textContent = freeWorkers() + '/' + state.workers; el('tractors').textContent = countType('tractor'); el('harvesters').textContent = countType('harvester'); el('animals').textContent = ownedAnimals(); el('silo').textContent = siloUsed() + '/' + state.siloCap; renderSiloBtn(); }
   el('siloChip').style.cursor = 'pointer'; el('siloChip').onclick = () => toggleMarket();
   el('statsChip').style.cursor = 'pointer'; el('statsChip').onclick = () => toggleStats();
   const seedsRow = el('seeds');
+  const seedRateEls = {};
   SEEDS.forEach(id => {
     const c = CROPS[id];
+    const szn = c.seasons.map(i => SEASONS[i].emoji).join('');
     const b = document.createElement('div');
     b.className = 'btn' + (state.seed === id ? ' sel' : ''); b.dataset.seed = id;
-    b.innerHTML = `<div class="em">${c.emoji}</div><div class="nm">${c.name}</div><div class="sub">🪙${c.cost}→${c.sell}/cell</div>`;
+    b.innerHTML = `<div class="em">${c.emoji}</div><div class="nm">${c.name}</div><div class="sub">🪙${c.cost}→${c.sell}/cell</div>`
+      + `<div class="rate"><span class="szn">${szn}</span> <b>–</b></div>`;
+    b.title = `${c.name} thrives in ${c.seasons.map(i => SEASONS[i].name).join(' & ')}. The ×number is its current growth speed (season + weather + irrigation).`;
     b.onclick = () => { state.seed = id; document.querySelectorAll('[data-seed]').forEach(e => e.classList.toggle('sel', e.dataset.seed === id)); };
     seedsRow.appendChild(b);
+    seedRateEls[id] = b.querySelector('.rate');
   });
+  // live growth-speed readout on each seed (reacts to season + weather + irrigation)
+  function updateSeedRates() {
+    for (const id of SEEDS) {
+      const box = seedRateEls[id]; if (!box) continue;
+      const r = growthRate(id);
+      box.querySelector('b').textContent = '×' + r.toFixed(2);
+      box.classList.toggle('good', r >= 1.05);
+      box.classList.toggle('bad', r <= 0.8);
+    }
+  }
   const hireRow = el('hire');
   const bWorker = document.createElement('div'); bWorker.className = 'btn'; bWorker.onclick = hireWorker; hireRow.appendChild(bWorker);
   const bTractor = document.createElement('div'); bTractor.className = 'btn'; bTractor.onclick = () => buyVehicle('tractor'); hireRow.appendChild(bTractor);
   const bHarv = document.createElement('div'); bHarv.className = 'btn'; bHarv.onclick = () => buyVehicle('harvester'); hireRow.appendChild(bHarv);
-  const bMarket = document.createElement('div'); bMarket.className = 'btn'; bMarket.onclick = () => toggleMarket(); bMarket.innerHTML = `<div class="em">📊</div><div class="nm">Market</div><div class="sub">sell · silo</div>`; hireRow.appendChild(bMarket);
+  const panelsRow = el('panels');
+  const mkPanelBtn = (em, nm, sub, fn) => { const b = document.createElement('div'); b.className = 'btn'; b.innerHTML = `<div class="em">${em}</div><div class="nm">${nm}</div><div class="sub">${sub}</div>`; b.onclick = fn; panelsRow.appendChild(b); return b; };
+  const bMarketPanel = mkPanelBtn('📊', 'Market', '🛖 0/200', () => toggleMarket());
+  mkPanelBtn('📋', 'Contracts', 'delivery orders', () => toggleContracts());
+  mkPanelBtn('🔧', 'Upgrades', 'boost the farm', () => toggleUpgrades());
+  mkPanelBtn('📈', 'Stats', 'progress', () => toggleStats());
+  function renderSiloBtn() {
+    const used = siloUsed(), cap = state.siloCap, pct = Math.min(100, cap ? used / cap * 100 : 0), near = pct >= 90;
+    bMarketPanel.innerHTML = `<div class="em">📊</div><div class="nm">Market</div><div class="sub">🛖 ${used}/${cap}</div>`
+      + `<div class="btn-bar"><div style="width:${pct}%${near ? ';background:#e5a13f' : ''}"></div></div>`;
+  }
   function renderDock() {
     bWorker.innerHTML = `<div class="em">👷</div><div class="nm">Hire Worker</div><div class="sub">🪙${workerPrice(state.workers)}</div>`;
     bTractor.innerHTML = `<div class="em">🚜</div><div class="nm">Buy Tractor</div><div class="sub">🪙${tractorPrice(countType('tractor'))} @ ${FARMS[state.activeFarm].name}</div>`;
     bHarv.innerHTML = `<div class="em">${HV_SVG(20)}</div><div class="nm">Buy Harvester</div><div class="sub">🪙${harvesterPrice(countType('harvester'))} @ ${FARMS[state.activeFarm].name}</div>`;
   }
-  function hireWorker() { const p = workerPrice(state.workers); if (state.coins < p) return flash('Not enough coins to hire'); state.coins -= p; state.stats.spent += p; state.workers++; renderHud(); renderDock(); save(); }
+  function hireWorker() { const p = workerPrice(state.workers); if (state.coins < p) return flash('Not enough coins to hire'); state.coins -= p; state.stats.spent += p; state.workers++; sfx('buy'); renderHud(); renderDock(); save(); }
   function buyVehicle(type) {
     const p = type === 'tractor' ? tractorPrice(countType('tractor')) : harvesterPrice(countType('harvester'));
     if (state.coins < p) return flash('Not enough coins for ' + type);
@@ -383,7 +530,7 @@
     const fi = state.activeFarm, slot = vehicles.filter(v => v.farm === fi).length, pos = farmPark(fi, slot);
     vehicles.push({ type, farm: fi, x: pos.x, y: pos.y, tx: pos.x, ty: pos.y, state: 'parked', crewed: false, cell: null, timer: 0, angle: 0 });
     flash(`${type === 'tractor' ? '🚜 Tractor' : '🌾 Harvester'} delivered to ${FARMS[fi].name}`);
-    renderHud(); renderDock(); save();
+    sfx('buy'); renderHud(); renderDock(); save();
   }
 
   // ---------- Canvas / camera ----------
@@ -450,8 +597,9 @@
   }
 
   // ---------- Growth / crew ----------
-  const ripe = (c) => c.crop && (Date.now() - c.plantedAt) >= CROPS[c.crop].grow * 1000;
-  const growth = (c) => c.crop ? Math.min(1, (Date.now() - c.plantedAt) / (CROPS[c.crop].grow * 1000)) : 0;
+  const cropDur = (c) => c.eff || CROPS[c.crop].grow * 1000;
+  const ripe = (c) => c.crop && (Date.now() - c.plantedAt) >= cropDur(c);
+  const growth = (c) => c.crop ? Math.min(1, (Date.now() - c.plantedAt) / cropDur(c)) : 0;
   const pops = [];
   function cellCenter(c) { return { x: c.cx * CELL + CELL / 2, y: c.cy * CELL + CELL / 2 }; }
   const roadSet = () => generate().roadSet;
@@ -562,7 +710,7 @@
     const c = v.cell; if (!c) return;
     if (v.type === 'tractor') {
       const crop = fields[c.fi].plannedCrop, def = CROPS[crop];
-      if (!c.crop && state.coins >= def.cost) { state.coins -= def.cost; state.stats.spent += def.cost; state.stats.planted++; c.crop = crop; c.plantedAt = Date.now(); }
+      if (!c.crop && state.coins >= def.cost) { const now = Date.now(); state.coins -= def.cost; state.stats.spent += def.cost; state.stats.planted++; c.crop = crop; c.plantedAt = now; c.eff = Math.round(def.grow * 1000 / growthRate(crop, now)); }
     } else if (ripe(c) && siloUsed() < state.siloCap) {
       // full silo → leave the crop standing (it will spoil if never harvested)
       state.silo[c.crop]++; state.stats.harvested++; c.crop = null;
@@ -570,11 +718,12 @@
     c.reserved = false; v.cell = null; renderHud();
   }
   function moveTo(o, dt, speed) { const dx = o.tx - o.x, dy = o.ty - o.y, d = Math.hypot(dx, dy); if (o.angle !== undefined) o.angle = Math.atan2(dy, dx); if (d < 2) { o.x = o.tx; o.y = o.ty; return true; } const step = Math.min(d, speed * dt); o.x += dx / d * step; o.y += dy / d * step; return false; }
-  function vehSpeed(v) { const key = Math.floor(v.x / CELL) + ',' + Math.floor(v.y / CELL); return roadSet().has(key) ? VSPEED * ROAD_MULT : VSPEED; }
+  function vehSpeed(v) { const key = Math.floor(v.x / CELL) + ',' + Math.floor(v.y / CELL); const rm = ROAD_MULT + 0.15 * (state.upgrades.roads || 0); return roadSet().has(key) ? VSPEED * rm : VSPEED; }
+  const workTime = () => WORK * (1 - 0.1 * (state.upgrades.machinery || 0));
   function updateVehicles(dt) {
     assignT += dt; if (assignT >= 0.25) { assignT = 0; crewParked(); }
     for (const v of vehicles) {
-      if (v.state === 'driving') { if (stepPath(v, dt)) { v.state = 'working'; v.timer = WORK; } }
+      if (v.state === 'driving') { if (stepPath(v, dt)) { v.state = 'working'; v.timer = workTime(); } }
       else if (v.state === 'working') { v.timer -= dt; if (v.timer <= 0) { applyWork(v); const n = findWork(v); if (n) assignCell(v, n); else { const slot = Math.max(0, vehicles.filter(o => o.farm === v.farm).indexOf(v)); const p = farmPark(v.farm, slot); routeTo(v, p.x, p.y); v.state = 'returning'; } } }
       else if (v.state === 'returning') { if (stepPath(v, dt)) { v.state = 'parked'; v.crewed = false; renderHud(); } }
     }
@@ -597,25 +746,47 @@
   }
 
   // ---------- Silo & market ----------
-  const PRICE = { wheat: { period: 95000, phase: 0.0 }, carrot: { period: 140000, phase: 2.1 }, pumpkin: { period: 185000, phase: 4.2 } };
-  function price(crop, at) { const c = CROPS[crop], p = PRICE[crop], now = at || Date.now(); const mult = 0.55 + 0.8 * (0.5 + 0.5 * Math.sin(now / p.period + p.phase)); return Math.max(1, Math.round(c.sell * mult)); }
-  function siloUsed() { return state.silo.wheat + state.silo.carrot + state.silo.pumpkin; }
+  const PRICE = {
+    wheat:   { period: 95000,  phase: 0.0 }, carrot: { period: 140000, phase: 2.1 },
+    potato:  { period: 120000, phase: 1.2 }, corn:   { period: 160000, phase: 3.4 },
+    pumpkin: { period: 185000, phase: 4.2 }, grapes: { period: 210000, phase: 5.5 },
+  };
+  function price(crop, at) {
+    const c = CROPS[crop], p = PRICE[crop], now = at || Date.now();
+    const mult = 0.55 + 0.8 * (0.5 + 0.5 * Math.sin(now / p.period + p.phase));
+    const seasonBonus = c.seasons.includes(seasonIndexAt(now)) ? 1.2 : 1;   // in-season crops fetch more
+    const trade = 1 + 0.06 * (state.upgrades.market || 0);
+    return Math.max(1, Math.round(c.sell * mult * seasonBonus * trade));
+  }
+  function siloUsed() { let n = 0; for (const s of SEEDS) n += state.silo[s]; return n; }
   function siloUpgradeCost() { return Math.round(150 * Math.pow(1.6, state.siloUp)); }
-  function sell(crop) { const q = state.silo[crop]; if (!q) return; const gain = q * price(crop); state.coins += gain; state.stats.earned += gain; state.stats.sold += q; state.silo[crop] = 0; flash(`Sold ${q} ${CROPS[crop].emoji} for 🪙${gain}`); renderHud(); if (marketOpen) renderMarket(); save(); }
+  function sell(crop) { const q = state.silo[crop]; if (!q) return; const gain = q * price(crop); state.coins += gain; state.stats.earned += gain; state.stats.sold += q; state.silo[crop] = 0; flash(`Sold ${q} ${CROPS[crop].emoji} for 🪙${gain}`); sfx('sell'); renderHud(); if (marketOpen) renderMarket(); save(); }
   function upgradeSilo() { const c = siloUpgradeCost(); if (state.coins < c) return flash('Not enough coins to upgrade silo'); state.coins -= c; state.stats.spent += c; state.siloCap += 200; state.siloUp++; renderHud(); renderMarket(); save(); }
-  let mktT = 0;
+  let mktT = 0, siloWasFull = false;
   function updateMarket(dt) {
     mktT += dt; if (mktT < 1) return; mktT = 0;
+    // running costs (fleet fuel + wages) — never charged while offline, and never below zero
+    const up = upkeepPerSec();
+    if (up > 0) { state.coins = Math.max(0, state.coins - up); state.stats.spent += up; }
     // optional auto-sell only when the player enabled it and prices are good
     if (state.autoSell) for (const crop of SEEDS) if (state.silo[crop] > 0 && price(crop) >= CROPS[crop].sell * 1.1) sell(crop);
     // crops left standing too long spoil (esp. when the silo is full)
     const now = Date.now();
     for (const f of fields) {
       if (!f.owned || f.type !== 'crop') continue;
-      for (const c of f.cells) if (c.crop && !c.reserved && (now - c.plantedAt) > CROPS[c.crop].grow * 1000 * ROT_MULT) { c.crop = null; state.stats.rotted++; }
+      for (const c of f.cells) if (c.crop && !c.reserved && (now - c.plantedAt) > cropDur(c) * ROT_MULT) { c.crop = null; state.stats.rotted++; }
     }
+    // silo-full alert (fires once on the transition)
+    const full = siloUsed() >= state.siloCap;
+    if (full && !siloWasFull) notify('🛖 Silo full — harvesting paused. Sell to make room!', 'warn');
+    siloWasFull = full;
+    updateSeasonChip();
+    updateContracts();
+    checkMilestones();
     if (marketOpen) renderMarket();
     if (statsOpen) renderStats();
+    if (upgradesOpen) renderUpgrades();
+    if (contractsOpen) renderContracts();
   }
 
   // market panel (overlay)
@@ -636,8 +807,8 @@
 
   // stats panel (overlay)
   const statsPanel = document.createElement('div'); statsPanel.id = 'stats'; document.getElementById('stage').appendChild(statsPanel);
-  let statsOpen = false;
-  function toggleStats(v) { statsOpen = v === undefined ? !statsOpen : v; statsPanel.style.display = statsOpen ? 'flex' : 'none'; if (statsOpen) renderStats(); }
+  let statsOpen = false, confirmReset = false;
+  function toggleStats(v) { statsOpen = v === undefined ? !statsOpen : v; confirmReset = false; statsPanel.style.display = statsOpen ? 'flex' : 'none'; if (statsOpen) renderStats(); }
   function renderStats() {
     const s = state.stats, net = Math.round(s.earned - s.spent);
     const cropF = fields.filter(f => f.owned && f.type === 'crop').length, pastF = fields.filter(f => f.owned && f.type === 'pasture').length;
@@ -653,10 +824,145 @@
       + row('🌱 Cells planted', s.planted)
       + row('🥀 Crops spoiled', s.rotted)
       + `<div class="st-div"></div>`
+      + row('📋 Contracts filled', s.contracts || 0)
+      + `<div class="st-div"></div>`
       + row('🚜 Fields owned', cropF)
       + row('🐄 Pastures owned', pastF)
-      + row('🏠 Farms owned', state.farmsOwned.filter(Boolean).length + ' / ' + FARMS.length);
+      + row('🏠 Farms owned', state.farmsOwned.filter(Boolean).length + ' / ' + FARMS.length)
+      + row('🏆 Milestones', MILESTONES.filter(m => state.milestones[m.id]).length + ' / ' + MILESTONES.length)
+      + `<div class="st-div"></div>`
+      + row('🗓️ Season', SEASONS[seasonIndexAt()].name + ' ' + SEASONS[seasonIndexAt()].emoji + ' · ' + WEATHER[weatherKeyAt()].name)
+      + row('🛢️ Running cost', '🪙' + upkeepPerSec().toFixed(2) + '/s')
+      + `<div class="st-div"></div>`
+      + `<button class="newgame-btn${confirmReset ? ' armed' : ''}">`
+      +   (confirmReset ? '⚠️ Erase all progress — click again to confirm' : '🔄 Start New Game')
+      + `</button>`;
     statsPanel.querySelector('.mkt-close').onclick = () => toggleStats(false);
+    statsPanel.querySelector('.newgame-btn').onclick = () => {
+      if (confirmReset) { confirmReset = false; newGame(); }
+      else { confirmReset = true; renderStats(); }
+    };
+  }
+
+  // ---------- Sound (WebAudio, lazy-init) ----------
+  let actx = null;
+  function sfx(kind) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+      const seq = kind === 'sell' ? [[660, 0], [880, 0.08]]
+        : kind === 'contract' ? [[523, 0], [784, 0.09], [1047, 0.18]]
+        : kind === 'milestone' ? [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.32]]
+        : kind === 'buy' ? [[520, 0]]
+        : [[300, 0]];   // warn / default: low blip
+      const t0 = actx.currentTime;
+      for (const [f, d] of seq) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0 + d);
+        g.gain.exponentialRampToValueAtTime(0.12, t0 + d + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.22);
+        o.connect(g); g.connect(actx.destination); o.start(t0 + d); o.stop(t0 + d + 0.24);
+      }
+    } catch (_) {}
+  }
+  window.addEventListener('pointerdown', () => { if (actx && actx.state === 'suspended') actx.resume(); }, { once: false });
+
+  // ---------- Notifications (toasts) ----------
+  const toastWrap = document.createElement('div'); toastWrap.id = 'toasts'; document.getElementById('stage').appendChild(toastWrap);
+  function notify(msg, type) {
+    const t = document.createElement('div'); t.className = 'toast' + (type ? ' ' + type : ''); t.textContent = msg;
+    toastWrap.appendChild(t);
+    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 400); }, 2600);
+    while (toastWrap.children.length > 2) toastWrap.firstChild.remove();
+  }
+
+  // ---------- Season / weather HUD ----------
+  function updateSeasonChip() {
+    const chip = el('seasonChip'); if (!chip) return;
+    const s = SEASONS[seasonIndexAt()], w = WEATHER[weatherKeyAt()];
+    chip.innerHTML = `${s.emoji} <span>${s.name}</span> ${w.emoji}`;
+    const wpct = Math.round((w.gm - 1) * 100), wsign = wpct >= 0 ? '+' : '';
+    chip.title = `${s.name} · ${w.name} weather → ${wsign}${wpct}% growth for all crops.`
+      + ` Each seed's ×number below shows its live growth speed (green = thriving, orange = struggling).`;
+    updateSeedRates();
+  }
+
+  // ---------- Milestones ----------
+  function checkMilestones() {
+    for (const m of MILESTONES) {
+      if (state.milestones[m.id]) continue;
+      if (m.test()) { state.milestones[m.id] = 1; state.coins += m.reward; state.stats.earned += m.reward; notify(`🏆 ${m.name} — reward 🪙${m.reward}!`, 'good'); sfx('milestone'); renderHud(); save(); }
+    }
+  }
+
+  // ---------- Contracts (delivery orders) ----------
+  const CONTRACT_MAX = 3;
+  let contractSeed = (Date.now() >>> 0) || 1;
+  const crnd = () => { contractSeed = (contractSeed * 1664525 + 1013904223) >>> 0; return contractSeed / 4294967296; };
+  function makeContract() {
+    const crop = SEEDS[Math.floor(crnd() * SEEDS.length)], c = CROPS[crop];
+    const qty = Math.round((8 + crnd() * 22) * (c.grow <= 120 ? 2 : c.grow <= 300 ? 1.2 : 0.7));
+    const reward = Math.round(qty * c.sell * (1.5 + crnd() * 0.9) / 5) * 5;   // premium over base value
+    const dur = Math.round((90 + crnd() * 150) * (c.grow / 120)) * 1000;      // slower crops get longer deadlines
+    return { crop, qty, reward, deadline: Date.now() + dur, id: Math.floor(crnd() * 1e9) };
+  }
+  function updateContracts() {
+    const now = Date.now();
+    for (let i = state.contracts.length - 1; i >= 0; i--) {
+      const k = state.contracts[i];
+      if (now > k.deadline) { state.contracts.splice(i, 1); }
+      else if (!k.warned && k.deadline - now < 30000) { k.warned = 1; notify(`⏳ Contract for ${k.qty} ${CROPS[k.crop].emoji} ends soon!`, 'warn'); }
+    }
+    while (state.contracts.length < CONTRACT_MAX) state.contracts.push(makeContract());
+  }
+  function claimContract(id) {
+    const i = state.contracts.findIndex(k => k.id === id); if (i < 0) return;
+    const k = state.contracts[i];
+    if (state.silo[k.crop] < k.qty) return flash(`Need ${k.qty} ${CROPS[k.crop].emoji} in the silo (have ${state.silo[k.crop]})`);
+    state.silo[k.crop] -= k.qty; state.coins += k.reward; state.stats.earned += k.reward; state.stats.sold += k.qty; state.stats.contracts++;
+    state.contracts.splice(i, 1);
+    flash(`✅ Contract fulfilled: +🪙${k.reward}`); sfx('contract');
+    renderHud(); if (contractsOpen) renderContracts(); if (marketOpen) renderMarket(); checkMilestones(); save();
+  }
+  const contractsPanel = document.createElement('div'); contractsPanel.id = 'contracts'; document.getElementById('stage').appendChild(contractsPanel);
+  let contractsOpen = false;
+  function toggleContracts(v) { contractsOpen = v === undefined ? !contractsOpen : v; contractsPanel.style.display = contractsOpen ? 'flex' : 'none'; if (contractsOpen) renderContracts(); }
+  function renderContracts() {
+    const now = Date.now(); let rows = '';
+    for (const k of state.contracts) {
+      const c = CROPS[k.crop], have = state.silo[k.crop], ready = have >= k.qty, secs = Math.max(0, Math.round((k.deadline - now) / 1000));
+      const mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
+      rows += `<div class="mkt-row"><span class="mkt-crop">${c.emoji} ${c.name}</span><span class="ct-need">Deliver <b>${k.qty}</b> · have ${have}</span><span class="mkt-stock">⏱ ${mm}:${ss}</span><span class="mkt-price">🪙${k.reward}</span><button class="mkt-sell" data-cid="${k.id}"${ready ? '' : ' disabled'}>Fulfill</button></div>`;
+    }
+    contractsPanel.innerHTML = `<div class="mkt-head">📋 Contracts <span class="mkt-close">✕</span></div><div class="panel-note">Deliver crops from your silo for a premium. New orders arrive automatically.</div>${rows || '<div style="opacity:.7">No open contracts.</div>'}`;
+    contractsPanel.querySelector('.mkt-close').onclick = () => toggleContracts(false);
+    contractsPanel.querySelectorAll('.mkt-sell').forEach(b => b.onclick = () => claimContract(+b.dataset.cid));
+  }
+
+  // ---------- Upgrades panel ----------
+  const upgradesPanel = document.createElement('div'); upgradesPanel.id = 'upgrades'; document.getElementById('stage').appendChild(upgradesPanel);
+  let upgradesOpen = false;
+  function toggleUpgrades(v) { upgradesOpen = v === undefined ? !upgradesOpen : v; upgradesPanel.style.display = upgradesOpen ? 'flex' : 'none'; if (upgradesOpen) renderUpgrades(); }
+  function buyUpgrade(key) {
+    const u = UPGRADES[key], lvl = state.upgrades[key] || 0;
+    if (lvl >= u.max) return;
+    const cost = upgradeCost(key);
+    if (state.coins < cost) return flash(`Need 🪙${cost} for ${u.name}`);
+    state.coins -= cost; state.stats.spent += cost; state.upgrades[key] = lvl + 1;
+    flash(`${u.emoji} ${u.name} → Lv ${lvl + 1}`); sfx('buy');
+    renderHud(); renderUpgrades(); save();
+  }
+  function renderUpgrades() {
+    let rows = '';
+    for (const key of UPG_KEYS) {
+      const u = UPGRADES[key], lvl = state.upgrades[key] || 0, maxed = lvl >= u.max, cost = upgradeCost(key);
+      rows += `<div class="mkt-row"><span class="up-name">${u.emoji} <b>${u.name}</b> <span style="opacity:.6">Lv ${lvl}/${u.max}</span></span><span class="mkt-stock">${u.desc(maxed ? lvl : lvl + 1)}</span><button class="mkt-sell" data-up="${key}"${maxed ? ' disabled' : ''}>${maxed ? 'MAX' : '🪙' + cost}</button></div>`;
+    }
+    const up = upkeepPerSec();
+    upgradesPanel.innerHTML = `<div class="mkt-head">🔧 Upgrades <span class="mkt-close">✕</span></div><div class="panel-note">Running costs: 🪙${up.toFixed(2)}/sec (fleet + wages).</div>${rows}`;
+    upgradesPanel.querySelector('.mkt-close').onclick = () => toggleUpgrades(false);
+    upgradesPanel.querySelectorAll('.mkt-sell').forEach(b => b.onclick = () => buyUpgrade(b.dataset.up));
   }
 
   // ---------- Input ----------
@@ -745,7 +1051,7 @@
       let col;
       if (f.type === 'pasture') col = ((c.cx + c.cy) & 1) ? '#8ccb63' : '#84c45c';
       else if (!c.crop) col = '#7a5236';
-      else if (ripe(c)) { const gr = CROPS[c.crop].grow * 1000, over = (Date.now() - c.plantedAt - gr) / (gr * (ROT_MULT - 1)); col = over > 0.05 ? mix(CROPS[c.crop].color, '#5f4f2c', Math.min(1, over) * 0.8) : CROPS[c.crop].color; }
+      else if (ripe(c)) { const gr = cropDur(c), over = (Date.now() - c.plantedAt - gr) / (gr * (ROT_MULT - 1)); col = over > 0.05 ? mix(CROPS[c.crop].color, '#5f4f2c', Math.min(1, over) * 0.8) : CROPS[c.crop].color; }
       else col = mix('#6b8f3f', CROPS[c.crop].color, growth(c) * 0.85);
       ctx.fillStyle = col; ctx.fillRect(x, y, CELL, CELL);
       if (f.type === 'crop' && ripe(c)) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(x + 3, y + 3, CELL - 8, CELL - 8); }
@@ -803,6 +1109,11 @@
 
     for (let k = pops.length - 1; k >= 0; k--) { const p = pops[k]; p.life -= dt * 0.9; p.y -= dt * 20; if (p.life <= 0) { pops.splice(k, 1); continue; } ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = '#12481a'; ctx.font = `bold ${13 / Math.max(zoom, 0.55)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y); ctx.globalAlpha = 1; }
 
+    // ambient season/weather tint (screen space, very subtle)
+    { const wk = weatherKeyAt();
+      const tint = wk === 'frost' ? 'rgba(205,228,240,0.15)' : wk === 'rain' ? 'rgba(60,80,120,0.16)' : wk === 'drought' ? 'rgba(232,170,80,0.12)' : wk === 'cloud' ? 'rgba(120,122,132,0.10)' : null;
+      if (tint) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H); } }
+
     // cursor tooltip (screen space)
     if (mouseIn && !down) {
       const tt = tooltipText();
@@ -823,7 +1134,7 @@
   }
 
   // ---------- Boot ----------
-  buildBase(); resize(); renderHud(); renderDock();
+  buildBase(); resize(); renderHud(); renderDock(); updateSeasonChip(); updateContracts();
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 </script>
